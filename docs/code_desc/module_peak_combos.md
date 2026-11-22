@@ -2,8 +2,8 @@
 
 > 对应目录：`src/ui/match/peak_*` + `src/ui/match/match_lineup_state.py` + `src/ui/match/match_analysis_view.py` + `src/ui/match/match_guide_panel.py` + `src/business/analysis/peak_ban_advice.py` + `src/business/analysis/win_rate_ranking.py` + `src/business/analysis/match_analysis_service.py` + `src/business/recognition/peak_select_watcher.py` + `src/data/combo_*` + `src/data/peak_win_rate_repository.py` + `src/ocr/card_grid_detector.py` + `src/ui/data_admin/combos_import_dialog.py` + `src/scripts/import_combos.py`
 > 职责：巅峰赛（2v2 模式）选将实时识别循环（会话世代校验、容差签名去重、标准轮询互斥持有、参考几何漂移抑制与漏检扣帧）、禁选建议象限判定、胜率名次单一事实源、卡牌网格检测、实战配队（combos）数据管理与座次解析、配队异步导入、对局攻略阵容状态与离线分析渲染、胜率榜按对局链路区分（2v2 / 巅峰赛）
-> 文档日期：2026-11-20（基线 `1acaa76`）
-> 测试规模：194 个含 `test_*` 函数的测试文件 / 2375 个 test_* 函数（2026-10-11 基线为 145 / 1626）
+> 文档日期：2026-11-21（基线 `e7e59b0`）
+> 测试规模：194 个含 `test_*` 函数的测试文件 / 2397 个 test_* 函数（2026-10-11 基线为 145 / 1626）
 
 ---
 
@@ -608,3 +608,7 @@ class _ImportWorker(QThread):
 ## 本轮文档校准（2026-11-20）
 
 自基线 `a5fde97`（2026-11-18）以来共 9 个提交（至 `1acaa76`），巅峰赛识别域无代码变更——会话制互斥、卡位检测、禁选建议象限判定与实战配队数据管理链路口径延续。
+
+## 本轮文档校准（2026-11-21）
+
+自基线 `1acaa76`（2026-11-20）以来共 4 个提交（至 `e7e59b0`），巅峰赛识别域无代码变更——会话制互斥、卡位检测、禁选建议象限判定与实战配队数据管理链路口径延续；测试规模口径刷新为 2397 个 `test_*` 函数。

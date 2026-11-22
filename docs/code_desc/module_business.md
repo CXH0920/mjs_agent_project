@@ -3,7 +3,7 @@
 > 对应目录：`src/business/`
 > 职责：QProcess 子进程管理（看门狗 + 任务台账）、服务编排、截图与 OCR 调度、官方榜单图片导入与复核、推荐/对局摘要组装、公告检查与百科 diff（含武将粒度精确消费与基线合并式前移）、卡牌百科同步与忽略名单管理、备份恢复
 > 知识库相关服务（元规则维护、审计、索引精化、语料任务定义、语料新鲜度判定、分类建议）见 [`./module_rag.md`](./module_rag.md)
-> 文档日期：2026-11-20（代码基线 1acaa76）
+> 文档日期：2026-11-21（代码基线 e7e59b0）
 
 ---
 
@@ -402,7 +402,7 @@ for top, bottom in zip(boundaries, boundaries[1:]):
 
 一次检查 = 拉公告（`fetch_latest_announcements`）→ 章节标题分类（`classify_hero_related`）→ `AnnouncementManager.merge_new` 去重落盘 → 拉百科（`fetch_baike_heroes`）→ 内容哈希 diff（`build_hero_snapshot`/`diff_heroes`）→ **忽略名单过滤**（`baike_ignore_store.filter_ignored` 扣除已忽略差异，`ready` 判定一致压制）→ `mark_ready_if_updated` → `_sync_timeline` 武将变更时间轴同步。公告或百科拉取异常只写入 `result.error` / `baike_ok=False` 并记日志，不覆盖旧快照、不中断应用。
 
-**阶段令牌（`_last_snapshot` / `pending_saves`）**：worker 线程计算的百科快照不直接写盘，而是通过 `AnnouncementCheckResult.snapshot` / `pending_saves` 字段带回到 `_finalize_check()`，由 GUI 线程统一持久化并更新 `_last_snapshot`。`mark_applied()` 在"更新武将数据"完成后由协调器调用：公告消费并把快照写回使差异归零。**武将粒度精确消费（e435cb0）**：签名扩展为 `mark_applied(hero_names=None, hero_ids=None)`——`hero_names` 为 `None` 时保留原整批语义（全取消"视为已查看"，快照全量前移）；否则按武将消费：公告只记录名单内武将（`Announcement.applied_heroes` 消费记录，公告提及武将**全部**消费完才置 APPLIED，否则保持 READY 继续提示；无提及武将的 READY 公告无可跳过对象直接整条消费），快照走 `_merge_snapshot_baseline(hero_ids)` **合并式前移**——加载当前基线后只把已消费武将的哈希条目从最近快照合入（id 不在最近快照记警告跳过；基线为空整体跳过防"只剩这些武将"的残缺基线），跳过武将旧基线保留、下次检查 diff 仍会报告其差异。**忙时跳过（801c9f1）**：`mark_applied()` 在检查/候选准备进行中直接跳过——此刻推进会与 worker 的公告状态推进及快照读写并发（横幅保留，用户可在下次检查后重试）。
+**阶段令牌（`_last_snapshot` / `pending_saves`）**：worker 线程计算的百科快照不直接写盘，而是通过 `AnnouncementCheckResult.snapshot` / `pending_saves` 字段带回到 `_finalize_check()`，由 GUI 线程统一持久化并更新 `_last_snapshot`。`mark_applied()` 在"更新武将数据"完成后由协调器调用：公告消费并把快照写回使差异归零。**武将粒度精确消费（e435cb0；全不勾零消费 2448bc7）**：签名为 `mark_applied(hero_names, hero_ids=None)`——`hero_names` **必填**，仅按武将消费：公告只记录名单内武将（`Announcement.applied_heroes` 消费记录，公告提及武将**全部**消费完才置 APPLIED，否则保持 READY 继续提示；无提及武将的 READY 公告无可跳过对象直接整条消费），快照走 `_merge_snapshot_baseline(hero_ids)` **合并式前移**——加载当前基线后只把已消费武将的哈希条目从最近快照合入（id 不在最近快照记警告跳过；基线为空整体跳过防"只剩这些武将"的残缺基线），跳过武将旧基线保留、下次检查 diff 仍会报告其差异。**整批消费分支已删除（2448bc7）**：原"全取消视为已查看"路径（`hero_names=None` 整批消费 + 快照全量前移）与界面"未勾选武将下次检查仍会提示"的承诺矛盾，已彻底移除——确认框全不勾时协调器**零消费**（不调 `mark_applied`，公告/差异/基线原样保留），不再有批次级消费入口。**忙时跳过（801c9f1）**：`mark_applied()` 在检查/候选准备进行中直接跳过——此刻推进会与 worker 的公告状态推进及快照读写并发（横幅保留，用户可在下次检查后重试）。
 
 **首次基线本地化（801c9f1 首跑语义修正）**：首次启用百科基线时优先用本地 `heroes.json` 初始化，避免官网快照被用作基线从而掩盖本地缺失（否则 diff 恒空、新增/调整永远不会提示）。若本地数据文件存在但加载为空则不写快照并记录警告；全新安装（无任何本地武将数据文件）则以当前百科为基线不提醒。**首跑判定扩展**：`_is_first_run()` 不再只看文件是否存在——文件存在但加载报错且内存为空（内容不可用，如损坏后留底）也按首跑处理；此时若按非首跑处理，全部历史公告会被当作新公告重新入库并覆盖写回，用户此前"已处理"的进度与历史记录一并丢失。「内存为空」不可省：`load_issues` 只在 `load()` 时清空而 `load()` 仅启动调一次，`merge_new` 跳过坏爬虫记录记的 error 与损坏恢复重建后的过期 error 都会残留在列表里——只看 error 会把同会话后续检查全部误判为首跑，新公告被静默吞掉。
 
@@ -935,10 +935,10 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 
 | 指标 | 数量 |
 |------|------|
-| 测试模块数 | 191 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 195 个） |
-| 测试用例数 | 2306 个 `test_*` 函数 |
+| 测试模块数 | 194 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 198 个） |
+| 测试用例数 | 2397 个 `test_*` 函数 |
 
-> 注：grep 静态计数，未计入 `parametrize` 展开；实际收集项以 `pytest --collect-only -q` 为准。2026-10-11 基线为 145 文件 / 1626 函数，本轮（2026-10-23）新增的备份恢复、访问冷却限频、ScriptRunner 状态机与启动失败终态、任务台账、看门狗树杀与无进度上限等回归测试已计入上表。
+> 注：grep 静态计数，未计入 `parametrize` 展开；实际收集项以 `pytest --collect-only -q` 为准。2026-10-11 基线为 145 文件 / 1626 函数；此后各轮（备份恢复、访问冷却、ScriptRunner 状态机、同名锚点迁移、维护台与零消费回归等）已计入上表。
 
 ---
 
@@ -1094,3 +1094,12 @@ def _on_error(self, error: QProcess.ProcessError) -> None:
 - **`announcement/announcement_service.py`（469 行，+55）武将粒度精确消费**（`e435cb0`，见 §3.6）：`mark_applied()` 签名扩展 `(hero_names=None, hero_ids=None)`——按武将消费公告（`applied_heroes` 消费记录，提及武将全部消费完才置 APPLIED）与快照基线合并式前移 `_merge_snapshot_baseline()`（只前移已消费武将的哈希条目；id 不在最近快照警告跳过、基线为空整体跳过防残缺基线）；无参调用保留整批语义
 - **`business/rag/corpus_freshness.py`（163 行，新增）**（`1acaa76`，P0-2）：语料新鲜度判定单一事实源（`task_states` / `index_state` / `stale_summary` / `rag_generation_enabled`），归 [`./module_rag.md`](./module_rag.md) §3.10——本模块文档仅登记其位于 `src/business/rag/` 的归属；数据新鲜度判定核心 `freshness.py` 本轮无变更
 - 公告检查/候选准备线程模型、冷却闸门（`CheckCooldown` 双窗口）、`_sync_timeline` 时间轴同步、备份恢复等其余链路无函数级变更
+
+## 本轮文档校准（2026-11-21）
+
+自基线 `1acaa76`（2026-11-20）以来共 4 个提交（至 `e7e59b0`），本模块受影响项：
+
+- **`announcement/announcement_service.py`（466 行，-3）「全不勾+确定」改为零消费**（`2448bc7`，见 §3.6）：`mark_applied()` 签名收敛为 `mark_applied(hero_names, hero_ids=None)`——`hero_names` 变更**必填参数**，删除 `hero_names=None` 整批消费分支（不再有"全取消视为已查看"路径，快照一律走 `_merge_snapshot_baseline()` 合并式前移）；确认框全不勾时协调器不调本方法，公告/差异/基线零消费、下次检查仍会提示（消除与界面承诺的矛盾）。行数预算 469 → 466
+- **`freshness.py`（503 → 543 行）监测项禁用 denylist**（`e7e59b0`，见 §3.19）：新增 `DISABLED_ITEM_KEYS` 常量与 `load_disabled_items()` 解析函数（读 `DATA_FRESHNESS_DISABLED_ITEMS` 单键 denylist，缺失/空 = 全选，未知 key debug 忽略）；`compute_freshness_report` 增第 9 参 `disabled_items: frozenset[str] | None = None`（None 时现读 env），禁用项跳过 item 生成与建议产出；**fail-safe**——disabled 覆盖当前构建全部可判项（精简版 = heroes+rankings）时 `logger.warning` + 回全量，杜绝 `_aggregate` 空集。消费与写回见 `data_freshness_chip.py`（[`./module_ui.md`](./module_ui.md)）与 `config/env.py` 键登记（[`./module_config.md`](./module_config.md)）
+- 维护台双运行器互斥（`f27dfe3`，P1-3）为 `src/ui/maintenance/` 变更，记录于 [`./module_rag.md`](./module_rag.md)；降级模式 toast 分流（`6a9a35d`）为协调器变更，记录于 [`./module_ui.md`](./module_ui.md)
+- QProcess 终态契约、官方榜单导入编排、轮询串联、备份恢复、访问冷却等其余链路本轮无变更

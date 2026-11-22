@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/ai/`
 > 职责：通过 AI（多供应商 API 或浏览器自动化）批量生成武将攻略和相性评分；超时分层与定向重试、prompt 四层决策门/锚例校准/JSON 纪律、生成任务互斥锁
-> 文档日期：2026-11-20（基线 `1acaa76`）
+> 文档日期：2026-11-21（基线 `e7e59b0`）
 
 ---
 
@@ -568,3 +568,7 @@ python -m src.scraper.ai_batch --synergy-list pairs.json   # 实战配队清单
 ## 本轮文档校准（2026-11-20）
 
 自基线 `a5fde97`（2026-11-18）以来共 9 个提交（至 `1acaa76`），AI 生成域（`src/scraper/ai/`）无代码变更——API/浏览器双后端、429 退避、四层决策门与失败清单口径延续。生成前语料欠账知情提示为 UI 消费层变更（`ui/generation/ai_generation_workflow.py` 预检 + `guide_progress_dialog.py` 常驻黄条），见 [module_ui.md](./module_ui.md) §3.6。
+
+## 本轮文档校准（2026-11-21）
+
+自基线 `1acaa76`（2026-11-20）以来共 4 个提交（至 `e7e59b0`），AI 生成域（`src/scraper/ai/`）无代码变更——API/浏览器双后端、429 退避、四层决策门、失败清单与生成互斥锁口径延续；测试规模口径刷新为 194 文件 / 2397 个 `test_*` 函数。

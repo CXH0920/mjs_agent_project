@@ -2,7 +2,7 @@
 
 > 对应目录：`src/main.py` + `src/config/`
 > 职责：应用启动入口、API 档案与 .env 配置管理、版本单一来源、统一日志初始化
-> 文档日期：2026-11-20（基线 `1acaa76`）
+> 文档日期：2026-11-21（基线 `e7e59b0`）
 
 ---
 
@@ -490,4 +490,4 @@ def should_show_state(state_file: Path = _STATE_FILE) -> bool:
 
 ## 本轮文档校准（2026-11-21）
 
-自基线 `1acaa76`（2026-11-20）起新鲜度胶囊监测项可配置：键元表新增透传键 `DATA_FRESHNESS_DISABLED_ITEMS`（str、default=None，不进 getter 域与 UI 配置对话框；denylist 逗号分隔禁用监测项 key，缺失/空 = 全选），38 → **39 键**（runtime 6 + mumu 21 + 透传 12），`_SENTINELS` 哨兵表与透传键集合断言同步 +1。消费与写回语义见 [`./module_business.md`](./module_business.md) 与 §3.3；`config.env.example`「数据新鲜度」段追加注释样例。
+自基线 `1acaa76`（2026-11-20）起新鲜度胶囊监测项可配置：键元表新增透传键 `DATA_FRESHNESS_DISABLED_ITEMS`（str、default=None，不进 getter 域与 UI 配置对话框；denylist 逗号分隔禁用监测项 key，缺失/空 = 全选），38 → **39 键**（runtime 6 + mumu 21 + 透传 12），`_SENTINELS` 哨兵表与透传键集合断言同步 +1。消费与写回语义见 [`./module_business.md`](./module_business.md) 与 §3.3；`config.env.example`「数据新鲜度」段追加注释样例。架构棘轮 `config/env.py` 423 → **426** 行；`config.env.example` +2 行。本轮其余 config 域文件（main.py / logging / version / onboarding / disclaimer / atomic_write / task_ledger）无变更。

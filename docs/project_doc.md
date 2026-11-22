@@ -1,9 +1,9 @@
 # 名将杀 Agent — 项目细节文档
 
-> 代码基线：2026-11-20（`1acaa76`）
+> 代码基线：2026-11-21（`e7e59b0`）
 > 项目路径：`G:\py_savepoint\test_project`  
 > 远程仓库：`gitee.com:chen-xianghao920/test_project.git`  
-> 文档日期：2026-11-20
+> 文档日期：2026-11-21
 > 事件归档：[PaddleOCR 优化事件归档](ocr_optimization_event.md)
 
 ---
@@ -33,14 +33,16 @@
 - [二十一、OCR 轮询链路提速与选将冷却期探测](#二十一ocr-轮询链路提速与选将冷却期探测2026-11-14-基线新增)
 - [二十二、公告横幅关闭指纹、配队导入完成提示与分类管理详情实名化](#二十二公告横幅关闭指纹配队导入完成提示与分类管理详情实名化2026-11-18-基线新增)
 - [二十三、知识库维护台体验增强、公告武将粒度精确消费与语料欠账联动](#二十三知识库维护台体验增强公告武将粒度精确消费与语料欠账联动2026-11-20-基线新增)
+- [二十四、新鲜度胶囊监测项可配置](#二十四新鲜度胶囊监测项可配置2026-11-21-基线新增)
+- [二十五、公告全不勾零消费与维护台双运行器互斥](#二十五公告全不勾零消费与维护台双运行器互斥2026-11-21-基线新增)
 
 ---
 
-## 当前代码基线与业务不变量（2026-11-18）
+## 当前代码基线与业务不变量（2026-11-21）
 
 > 本节的粗体小节按提交时间倒序追加；2026-10-11（`2081b5b`）之前的描述对应历史基线，
-> **知识库维护台体验增强、公告武将粒度精确消费与语料欠账联动（eab529d / 6db5355 / bd0ee62 / c0ef7a8 / 4367444 / e435cb0 / 4ff8d68 / dc377e6 / 1acaa76）** 及其后各小节为
-> 2026-10-12 至 11-20 新增，与后续各章冲突时以本节为准。
+> **公告全不勾零消费与维护台双运行器互斥（2448bc7 / 6a9a35d / f27dfe3）** 及其后各小节为
+> 2026-10-12 至 11-21 新增，与后续各章冲突时以本节为准。
 
 本节优先于后续历史性描述，用于维护时快速确认当前代码的边界和主调用链。项目是 PySide6 桌面辅助工具：UI 负责交互与信号编排，`src/business/` 按 `fetching`、`emulator`、`recognition`、`analysis`、`maintenance`、`card_sync` 分隔 QProcess、ADB、OCR、分析和维护工作流（竞态守卫统一走 `recognition/session_guard.py` 三原语，连接域经 `emulator/capture_connection.py` 的 `CaptureConnectionManager` 承载，支持模拟器 ADB 与官方 PC 客户端双形态图像源），`src/scraper/` 负责官网与 AI 数据生成及卡牌百科手牌库抓取，`src/data/` 提供 JSON 持久化和内存模型（含 `card_sync_store` 卡牌快照与变更记录持久化），`src/business/freshness.py` 提供数据新鲜度判定核心，`src/business/rag/corpus_freshness.py` 提供语料新鲜度判定单一事实源（task_states / index_state / stale_summary，1acaa76）。
 
@@ -60,7 +62,7 @@
 | 巅峰赛选将 | `PeakSelectPanel._on_toggle_watcher()` | `PeakSelectWatcher.start()`（会话制挂起 + 清冷却 + 持有锁 + 作废在途轮询）-> 每 1.5s `_do_work()` -> `CaptureService.capture_for_poll()` -> `detect_selection_cards()` -> SessionGuard 世代校验 -> `CaptureService.submit_ocr_task()` -> `parse_pool()` -> `pool_updated`；候选期卡数回升拍扣住一拍复核（过场坏帧拦截）；`_refresh_resolutions()` 逐拍内容验证人工确认（宽限淘汰）；牌面退出两拍后 `board_exited` -> 主窗口衔接激活对局攻略页；`confirm_pending` 含牌面在位守卫；图片导入前校验旧人工确认 | 实时识别 2v2 牌面，展示候选池、禁选建议、实战配队；会话期间 `hero_selection` 持续挂起，仅 `stop()` 时恢复全部标准任务；停止/牌面退出时经 `_clear_session_state` 清空确认表与牌面引用 |
 | 实战配队维护 | `PeakSelectPanel._open_combo_management()` / `CombosImportDialog` | `ComboManagementDialog` / `run_import()` -> `ComboManager` 增删改查（含逻辑删除/恢复） -> 座次解析 + position 交叉校验 -> 原子写 combos.json -> 导入结束弹「导入完成」摘要弹窗（925aa25） | 手工管理 / 外部工具导入合并，幂等 |
 | 卡牌百科同步 | 「数据」菜单 → `CardSyncDialog` | `CardSyncService.check_now()`（后台抓官网手牌库）→ `card_baike.fetch_cards()` → diff 快照 → `apply_updates()`（确认应用）→ `card_sync_store` 持久化 | 更新确认对话框展示变更明细，确认后原子写入 `data/cards.json`，快照和变更记录落盘 |
-| 数据新鲜度 | 状态栏 `DataFreshnessChip` | 信号驱动 + 目录监听：三类采集完成 / `ai_workflow.guides/synergies_changed` / 公告检查完成 + `QFileSystemWatcher`（data/ 目录 mtime 快照 500ms 去抖）→ `compute_freshness_report()`（`src/business/freshness.py` 逐武将核对）→ 芯片取色与菜单 | 胶囊按 7/14 天档位显绿/黄/红；点击弹「内容年龄 / 数据源周期 / 建议操作」菜单，建议动作（增量获取/指定获取）可点直达采集入口（忙碌 toast 拦截）；菜单末尾「语料状态」可点跳转行（有语料欠账且完整版才出现）直达知识库维护页，采集完成 toast 追加欠账尾串（1acaa76） |
+| 数据新鲜度 | 状态栏 `DataFreshnessChip` | 信号驱动 + 目录监听：三类采集完成 / `ai_workflow.guides/synergies_changed` / 公告检查完成 + `QFileSystemWatcher`（data/ 目录 mtime 快照 500ms 去抖）→ `compute_freshness_report()`（`src/business/freshness.py` 逐武将核对，支持 `disabled_items` 禁用项）→ 芯片取色与菜单 | 胶囊按 7/14 天档位显绿/黄/红；点击弹「内容年龄 / 数据源周期 / 建议操作 / 监测项」菜单——建议动作（增量获取/指定获取）可点直达采集入口（忙碌 toast 拦截）；菜单末尾「语料状态」可点跳转行（有语料欠账且完整版才出现）直达知识库维护页，采集完成 toast 追加欠账尾串（1acaa76）；「监测项」5 开关（武将/攻略/相性/官方榜单/语料欠账提醒，取消项完全退出判定与显示，`_toggle_item` 经 `save_env_file` 写回 `DATA_FRESHNESS_DISABLED_ITEMS` 单键 denylist，最后一项守卫 + 判定层全禁 fail-safe 回全量，e7e59b0） |
 
 ### 数据完整性与只读恢复
 
@@ -88,6 +90,8 @@ OCR 工作由一个 `OcrWorker` 串行队列执行。`OcrService` 管理轮询�
 **OCR 双套件引擎（B1，2026-10 切换）**：主引擎为 RapidOCR/PP-OCRv6-small（ONNX，随 rapidocr wheel 内置）；对未决识别槽位，`GeneralRecognizer` 调用 `engine_loader.get_recheck_ocr_engine()` 惰性加载复核引擎——与主引擎互为异构（主 v6 时复核 v4-mobile，v4 三件套经 `src/scripts/fetch_recheck_models.py` 从官方清单预取），在候选闭包内做二次确认。设备固定 CPU（GPU 已否决），det 参数显式 `limit_type=max/limit_side_len=960` 与生产画布同口径，ORT 线程钉为 `MUMU_OCR_CPU_THREADS`。配置参数 `MUMU_OCR_RECHECK_ENABLED`（默认 false）控制复核开关、`MUMU_OCR_PRIMARY_ENGINE`（默认 v6，可切 v4 作回滚档）控制主引擎。paddle/paddleocr 已全量退役。设计文档：`docs/design/ocr_engine_upgrade_eval.md`。
 
 **轮询闲置自动暂停（2026-09 新增）**：`frame_fingerprint.py` 对整帧降采样为 32×18 灰度指纹（576 字节），MAD 阈值 3.0 判定画面是否变化。`PollCoordinator` 在闲置暂停 5 分钟（`IDLE_PAUSE_MINUTES=5`）后自动暂停轮询，用户交互（点击导航、打开配置等）触发恢复。配置参数 `MUMU_OCR_POLL_IDLE_PAUSE`（默认 true）控制开关。阈值校准工具：`src/scripts/calibrate_idle_threshold.py`。
+
+**公告全不勾零消费与维护台双运行器互斥（2026-11-21 新增，2448bc7 / 6a9a35d / f27dfe3）**：① 武将更新确认框「全不勾+确定」改为**零消费**（2448bc7）——原「全取消视为已查看」整批消费与界面"未勾选武将下次检查仍会提示"的承诺矛盾（勾了武将说会再提示、什么都不勾反而全部吞掉），根治为：`AnnouncementService.mark_applied()` / `AnnouncementManager.mark_applied()` 签名收敛为 `hero_names` **必填**、整批消费分支删除（快照一律 `_merge_snapshot_baseline()` 合并式前移），全不勾时协调器不调 `mark_applied`、公告与差异原样保留、不刷新横幅/对话框，采集成功 toast 尾串追加「未勾选的武将下次检查仍会提示」；全不勾 toast 按 `official_ok` 分流文案（6a9a35d）——正常模式引导忽略名单入口（可达），降级模式只说明「官网数据获取失败，本次未做更改」（忽略入口在降级模式下已禁——候选无 `content_hash` 写入无法匹配压制，不给不可达的指引）。② 知识库维护台**双运行器互斥**（f27dfe3，P1-3）——`rag_maintenance_panel`（语料/索引构建运行器）与内嵌 `rule_doc_panel`（元规则脚本运行器）共享底部日志与执行历史快照（单一 `_active_run`），并发会让快照归属错乱：宿主构造注入 `RuleDocPanel(external_busy_check=lambda: self._runner.is_running())`，`_run_script()` 检查自身 + 外部任一在跑即拦截；`_run_module()` 忙守卫扩为 `_runner.is_running() or _rule_doc.is_script_running()`；元规则脚本 `script_started/finished` → `_set_busy(True/False)` 联动锁页面执行入口（`set_scripts_enabled` 管外壳「刷新状态」按钮，子页签按钮由入口拦截兜底）；新增公共方法 `is_script_running()` / `set_scripts_enabled()`。③ 并补探测命中拍生产路径回归断言（P1-4，`test_poll_coordinator`）。详见第二十五章。
 
 **知识库维护台体验增强、公告武将粒度精确消费与语料欠账联动（2026-11-19 至 11-20 新增，eab529d / 6db5355 / bd0ee62 / c0ef7a8 / dc377e6 / 4367444 / e435cb0 / 4ff8d68 / 1acaa76）**：① 知识库维护台五笔增强——左栏 10 → 11 项新增「向量索引」（`index_state()` 按段目录文件 mtime 三态判定 + 待同步 ↻ 经 `_on_rebuild_requested()` 分派 `src.rag.indexer` 全量重建 + `_run`/`_run_index` 抽出公共 `_run_module()`，eab529d）；执行日志历史回看（内存快照 10 条丢最旧 / 单次正文 10 万字符截断，历史下拉弹 `readonly_viewer_dialog` 只读查看器回看完整输出，6db5355）；只读语料行点击升级内容查看器（`.md` 伴文件全文 / json 前 50 块摘要降级）+ 修复向量索引行点击静默无反应（`_show_index_meta()`）；审计横幅超 3 条「展开全部（还有 N 条）」展开收起；审计三类时效条目 `target` 挂结构化命中清单（bd0ee62），跳转经 `_refinement_focus_queries()`（技能名优先、去重保序）传入 `IndexRefinementDialog(focus_queries=…)` 定位（自动切「全部」范围 + 立即过滤），总览条「过期复核 i/N [下一条 ▸]」环形逐站导航（c0ef7a8）；批量 LLM 建议非模态进度小窗 `suggest_progress_dialog`（进度/失败数/最新完成 + 取消善后，`SuggestController.is_single` 单块按钮「建议中…」反馈，dc377e6）。② 公告武将粒度精确消费（e435cb0）——修复"勾选武将级、消费批次级"错配：`Announcement.applied_heroes` 消费记录 + `mark_applied(hero_names, hero_ids)` 名单消费（提及武将全部消费完才 APPLIED 否则保持 READY）+ `_merge_snapshot_baseline()` 基线合并式前移（只前移已消费武将哈希，跳过武将下次检查仍提示）+ 协调器 `_pending_consume` 勾选名单传递链与 `_filter_consumed_diff()` 内存 diff 精确剔除 + 公告流程移除 `incremental` 阶段（新增武将按官网 id 统一指定采集）+ 横幅标签过滤已消费项；确认框 `official_ok` 激活为活信号（4ff8d68，官网失败降级提示条统一解释摘要缺失/忽略禁用/无目标禁勾），无采集目标候选灰显禁勾、内容一致候选默认不勾、全取消 toast 引导忽略名单。③ 语料欠账联动（1acaa76，P0-2）——新增 `src/business/rag/corpus_freshness.py` 判定单一事实源（`task_states(with_counts)` 毫秒级快速路径 / `index_state` / `stale_summary` 欠账摘要 / `rag_generation_enabled` 隔离包装），采集完成 toast 追加「N 项语料待重建」尾串、数据新鲜度芯片菜单「语料状态」可点跳转行直达维护页（`MainWindow._goto_rag_maintenance()` 桥接，预算 630→639）、AI 生成发起前毫秒级预检并以进度框常驻黄字知情提示「生成内容可能不含最新调整」（经典模式 / RAG 关闭 / 全部最新均不提示，不阻断生成）。④ 技能描述拆段纯文本标题等值判定（4367444）——`split_skill_desc` 重写为逐行混合式（按 `</p>` 切行、行内 `<br>` 切片、标题纯文本匹配词表），空正文标题段不参与认领 + prelude 兜底 + `transform` 空描述告警，存量输出逐字节一致（`hero_content_hash` 不变），实网对照 201 武将 499 技能仅 3 条差异且全部为修复。
 
@@ -2568,7 +2572,7 @@ python -m pytest tests/ -v
 
 开发环境与 CI 统一使用 Ruff 0.12.0（`select = ["F", "T201", "I", "B905"]`，`per-file-ignores` 对 `src/main.py` 与 `src/rag/**`、`src/scraper/**`、`src/scripts/**`、`tests/**` 放宽 T201，因这些目录混有 CLI `print` 进度通道）。CI 执行 `python -m pytest -q -n auto --timeout=60 --timeout-method=thread`，并收集 `logs/pytest-timeout-*.log`。
 
-当前仓库有 **194 个含 `test_*` 函数的测试文件 / 2375 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开；`tests/` 下 py 文件共 198 个，其余为夹具/辅助模块）；实际收集项以 `pytest --collect-only -q` 为准。基线 2026-10-11（`2081b5b`）为 145 / 1626，2026-11-06（`65dff21`）为 156 / 2042，2026-11-14（`d1ff679`）为 191 / 2306，2026-11-18（`a5fde97`）为 191 / 2316。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
+当前仓库有 **194 个含 `test_*` 函数的测试文件 / 2397 个 `test_*` 函数**（grep 静态计数，未计入 `parametrize` 展开；`tests/` 下 py 文件共 198 个，其余为夹具/辅助模块）；实际收集项以 `pytest --collect-only -q` 为准。基线 2026-10-11（`2081b5b`）为 145 / 1626，2026-11-06（`65dff21`）为 156 / 2042，2026-11-14（`d1ff679`）为 191 / 2306，2026-11-20（`1acaa76`）为 194 / 2375，2026-11-21（`e7e59b0`）为 194 / 2397。定向修改默认只运行受影响测试文件；完整套件是否通过应以实际执行结果为准。
 
 > 本机 `Temp` 目录访问受限，跑测试需加 `--basetemp=.tmp_test/pytest-tmp`。
 
@@ -3732,10 +3736,10 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 
 修复"勾选武将级、消费批次级"粒度错配：确认框留个别武将不勾（如萧思话），旧逻辑更新成功后整批公告/差异/基线仍被全量消费，跳过武将的差异永久丢失且重查公告无法找回。三个消费点全部对齐到用户实际勾选的武将名单：
 
-- **数据层**：`Announcement` 新增 `applied_heroes` 消费记录字段；`AnnouncementManager.mark_applied(hero_names=None)` 支持按武将名单消费——公告提及武将全部消费完才置 APPLIED，否则保持 READY 继续提示；无参调用保留原整批语义（全取消"视为已查看"）；无提及武将的 READY 公告无可跳过对象直接整条消费。
+- **数据层**：`Announcement` 新增 `applied_heroes` 消费记录字段；`AnnouncementManager.mark_applied(hero_names=None)` 支持按武将名单消费——公告提及武将全部消费完才置 APPLIED，否则保持 READY 继续提示；无参调用保留原整批语义（全取消"视为已查看"）；无提及武将的 READY 公告无可跳过对象直接整条消费。（**2026-11-21 修正（2448bc7）**：`hero_names=None` 整批语义已删除，签名收敛为 `mark_applied(hero_names)` 必填——见第二十五章。）
 - **服务层**：`AnnouncementService.mark_applied(hero_names, hero_ids)` 百科快照基线从覆盖式改为**合并式前移**——`_merge_snapshot_baseline()` 只把已消费武将的哈希条目从最近快照合入当前基线（id 不在最近快照记警告跳过；基线为空整体跳过防"只剩这些武将"的残缺基线），跳过武将旧基线保留，下次检查 diff 仍会报告其差异。
 - **协调器**：新增勾选名单传递链（对话框 → `_pending_consume` → 完成回调），采集成功后 `mark_applied(names, hero_ids)` 精确消费公告、`_filter_consumed_diff()` 精确消费内存 diff（id 优先按名兜底，与忽略名单过滤同口径；`removed` 不在更新流程内保留）与快照基线；**公告流程移除 `incremental` 阶段**（`_pending_phases` 收敛单阶段 `[("specific", selected_ids)]`）；横幅 `_announcement_names()` 过滤已消费项，只提示剩余待更新武将。
-- **确认框所见即所得**：勾选即采集目标——新增武将按官网 id 统一走指定采集（`build_update_candidates()` 对公告来源的本地未收录候选在官网可用时补官网 id）；副标题明确"未勾选武将下次检查仍会提示"；官网数据不可用且本地未收录的候选**灰显禁勾**并标注原因（不再"可勾选却被静默丢弃"）；内容一致候选默认不勾（避免多余采集请求）；全取消 toast 改为引导使用忽略名单。
+- **确认框所见即所得**：勾选即采集目标——新增武将按官网 id 统一走指定采集（`build_update_candidates()` 对公告来源的本地未收录候选在官网可用时补官网 id）；副标题明确"未勾选武将下次检查仍会提示"；官网数据不可用且本地未收录的候选**灰显禁勾**并标注原因（不再"可勾选却被静默丢弃"）；内容一致候选默认不勾（避免多余采集请求）；全取消 toast 改为引导使用忽略名单。（**2026-11-21 修正（2448bc7 / 6a9a35d）**：「全取消视为已查看」整批消费已删除，全不勾+确定改为零消费、toast 按 `official_ok` 分流——见第二十五章。）
 - **official_ok 激活为活信号**（4ff8d68）：确认框新增 `official_ok` 参数（默认 True 兼容旧 payload），官网拉取失败时顶部 `NoticeBanner` 警告提示条说明降级原因（差异摘要与忽略功能暂不可用，建议稍后重试），统一解释降级框中摘要缺失、忽略禁用、无采集目标候选禁勾三项异常；协调器消费此前仅赋值未读取的 `official_ok` 字段，弹框前经状态栏说明原因并透传。
 - `announcement.py` 行数预算 742 → 750。
 
@@ -3795,3 +3799,48 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 ### 24.3 测试与验收
 
 判定层 7 例（禁用排除/等值现状/基准不受影响/warning 与建议随 heroes 消失/fail-safe 三组合含「4 可判项全禁 + corpus」/解析健壮性）+ UI 层 9 例（toggle 写回与刷新/完整版与精简版守卫/写失败/精简版裁剪/corpus 常驻与静音/勾选态现读/精简版写回保留不可见项），`test_env_config.py` 哨兵表与透传键集合断言同步 +1 键。验收口径：无配置等值现状、取消榜单删 CSV 不变红、取消武将攻略相性判定不变、取消语料欠账不出 section、重启保持、最后一项守卫、精简版两开关、手改 env 全禁回全量 + warning 不崩溃、写失败 toast 不保留。
+
+## 二十五、公告全不勾零消费与维护台双运行器互斥（2026-11-21 基线新增）
+
+本节记录基线 `1acaa76`（2026-11-20）→ `e7e59b0`（2026-11-21）共 4 个提交中尚未随文入档的三笔修复（`e7e59b0` 监测项可配置见第二十四章），与前文冲突时以本节为准。
+
+### 25.1 武将更新确认框「全不勾+确定」零消费（2448bc7）
+
+- **问题**：确认框副标题承诺"未勾选武将下次检查仍会提示"，但什么都不勾点确定会走"全取消视为已查看"路径——`mark_applied()` 无参整批消费公告、快照全量前移，**勾了武将说会再提示、什么都不勾反而全部吞掉**，与界面承诺矛盾。
+- **修复**：全不勾+确定改为**零消费**——协调器 `_on_hero_update_prepared()` 检测 `selected_ids` 为空时不调 `mark_applied()`、不清 `_last_diff`、不刷新横幅/对话框，公告与差异原样保留，下次检查仍会提示。
+- **签名收敛**：`AnnouncementService.mark_applied(hero_names, hero_ids=None)` 与 `AnnouncementManager.mark_applied(hero_names)` 的 `hero_names` 变更**必填参数**，`None` 整批消费分支删除，快照一律走 `_merge_snapshot_baseline()` 合并式前移——批次级消费入口彻底消失，"所见即所得"语义在数据层不可绕过。
+- **文案对齐**：采集成功 toast 尾串追加「未勾选的武将下次检查仍会提示」；行数变化 `announcement_service.py` 469 → 466、`announcement_update_coordinator.py` 472 → 479。
+
+### 25.2 降级模式全不勾 toast 分流（6a9a35d）
+
+- 全不勾 toast 按 `official_ok` 分流：正常模式「百科尚未同步更新，下次检查仍会提示；若不再需要提示，选中相应条目点击『忽略此条差异』」；降级模式「官网数据获取失败，本次未做更改，下次检查仍会提示」。
+- 分流原因：降级模式下忽略入口已禁（候选无 `content_hash`，写入忽略名单后无法与后续 diff 匹配压制），旧文案会指引一个不可达的入口——不给做不到的指引。
+
+### 25.3 维护台双运行器互斥（f27dfe3，P1-3）
+
+- **问题**：`rag_maintenance_panel`（语料/索引构建运行器）与内嵌 `rule_doc_panel`（元规则脚本运行器）共享底部日志与执行历史快照（单一 `_active_run`），并发执行会让快照归属错乱——元规则输出灌进语料重建的记录、退出码封错条目。
+- **修复**：入口**双向拦截**——
+  - 宿主构造注入：`RuleDocPanel(self._root, external_busy_check=lambda: self._runner.is_running())`；
+  - `_run_script()` 起手检查 `self._runner.is_running() or external_busy_check()`，任一在跑即弹「正在执行」拦截；
+  - 反向 `_run_module()` 忙守卫扩为 `self._runner.is_running() or self._rule_doc.is_script_running()`。
+- **联动锁**：元规则脚本 `script_started` → `_set_busy(True)`（锁页面执行入口：刷新/语料/索引/精化四按钮 + workspace 交互 + `rule_doc.set_scripts_enabled(False)` 管外壳「刷新状态」按钮——子页签脚本按钮启用随勾选数实时重算，外壳强禁会被覆盖，由 `_run_script` 入口拦截兜底）、`script_finished` → `_set_busy(False)`。
+- **新增公共方法**：`RuleDocPanel.is_script_running()`（供宿主互斥检查）/ `set_scripts_enabled(enabled)`；`external_busy_check=None` 时本面板独立复用（仅自身 runner 互斥，语义不变）。
+- **架构棘轮**：`rag_maintenance_panel.py` 645 → 652、`rule_doc_panel.py` 337 → 356。
+- **P1-4 同笔**：补探测命中拍生产路径回归断言（`test_poll_coordinator` +35 行），锁定冷却期探测的命中维持/拒识解除链路。
+
+### 25.4 本轮基线数字口径（2026-11-20 → 2026-11-21）
+
+| 项 | 2026-11-20 | 2026-11-21 |
+|---|---|---|
+| 提交数 | 基线 | +4（`2448bc7` / `6a9a35d` / `f27dfe3` / `e7e59b0`） |
+| `announcement_service.py` | 469 行 | 466 行（预算 466） |
+| `announcement_update_coordinator.py` | 472 行 | 479 行 |
+| `announcement_manager.py` | 236 行 | 232 行 |
+| `freshness.py` | 503 行（预算 503） | 543 行（预算 543） |
+| `data_freshness_chip.py` | 201 行 | 295 行 |
+| `rag_maintenance_panel.py` | 645 行（预算 645） | 652 行（预算 652） |
+| `rule_doc_panel.py` | 337 行（预算 337） | 356 行（预算 356） |
+| `config/env.py` | 423 行（预算 423） | 426 行（预算 426） |
+| env 键元表 | 38 键 | 39 键（新增透传键 `DATA_FRESHNESS_DISABLED_ITEMS`） |
+| 测试文件 / `test_*` 函数 | 194 / 2375 | 194 / 2397（净增 22 例，无新增文件） |
+| 移除 | — | `mark_applied` 的 `hero_names=None` 整批消费分支（服务层 + 数据层） |

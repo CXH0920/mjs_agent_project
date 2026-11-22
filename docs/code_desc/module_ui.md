@@ -2,7 +2,7 @@
 
 > 对应目录：`src/ui/`
 > 职责：PySide6 桌面用户界面，包含主窗口、武将浏览器、推荐面板、对局攻略页面和各种对话框
-> 文档日期：2026-11-20（基线 1acaa76）
+> 文档日期：2026-11-21（基线 e7e59b0）
 
 ---
 
@@ -506,7 +506,7 @@ PeakSelectPanel
 - 菜单“数据 > 检查公告更新 / 公告记录”；工作区顶部 `NoticeBanner`：可更新公告显示“武将数据可更新 · 百科已更新，涉及：…”（success 色调），待生效公告显示“检测到武将相关公告 · 公告已发布，官网百科数据通常滞后半天到一天”（info 色调），纯 diff 变化显示“检测到百科数据变化”（warning 色调）。横幅武将标签由 `_announcement_names()` 汇总，**已消费武将不再展示**（e435cb0：跳过 `applied_heroes` 内名字，横幅只提示剩余待更新武将）。
 - `AnnouncementDialog` 展示公告列表（日期/标题/变更标签/未收录标记/状态）与全文、百科 diff 变更清单，非模态；`check_requested` / `update_requested` 两个信号分别驱动检查与更新入口。
 - “更新武将数据”先由 `AnnouncementService.collect_base_candidates()` 预判候选，无候选时状态栏提示；有候选则调用 `prepare_update_candidates()` 后台拉取官网数据并计算字段级差异，结果经 `update_candidates_prepared` 信号回到 `_on_hero_update_prepared()`。**官网获取失败降级提示（4ff8d68）**：payload 的 `official_ok` 字段（此前仅赋值未读取）激活为活信号——`False` 时弹框前状态栏说明“官网数据获取失败，以下候选基于上次检查结果”，并向确认框透传 `official_ok=False`。
-- `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。**所见即所得勾选（e435cb0）**：勾选即采集目标——新增武将按官网 id 统一走指定采集（公告流程移除 `incremental` 阶段，副标题明确“未勾选武将下次检查仍会提示”）；`selected_candidates`（勾选候选全量）与 `selected_ids`（含新增武将的官网 id）一同输出；无采集目标的候选（官网不可用且本地未收录）**灰显禁勾**并标注原因（避免“可勾选却被静默丢弃”），`_select_all` 跳过禁勾项；与官网内容一致的候选默认不勾（`summary == ["本地与官网内容一致"]`），避免多余采集请求。**official_ok 降级提示条（4ff8d68）**：`official_ok=False` 时顶部 `NoticeBanner`（warning 色调）统一解释降级框中摘要缺失、忽略禁用、无采集目标候选禁勾三项异常。全取消改为 toast 引导使用忽略名单（“已保留本地武将内容，本次未更新。若不想再次收到提示，可选择武将后点击「忽略此条差异」”）。忽略骨架与 `CardSyncDialog` 共用 `IgnoreableDiffListMixin`（`ignore_ui_optional=True`：无 `AnnouncementService` 时整组隐藏忽略入口；保留 content_hash 门控——官网获取失败的差异忽略后无法匹配压制，不提供忽略；三态 summary 文案；忽略后过滤 `_candidates` 维持基数）。
+- `HeroUpdateConfirmDialog` 展示待更新武将（名称/类型/来源/字段级差异摘要），支持勾选、全选/清空；双击或按钮打开 `HeroDiffDetailDialog` 查看本地 vs 官网全文对比（Git 风格 diff，三页：差异对比/本地原文/官网原文）。**所见即所得勾选（e435cb0）**：勾选即采集目标——新增武将按官网 id 统一走指定采集（公告流程移除 `incremental` 阶段，副标题明确“未勾选武将下次检查仍会提示”）；`selected_candidates`（勾选候选全量）与 `selected_ids`（含新增武将的官网 id）一同输出；无采集目标的候选（官网不可用且本地未收录）**灰显禁勾**并标注原因（避免“可勾选却被静默丢弃”），`_select_all` 跳过禁勾项；与官网内容一致的候选默认不勾（`summary == ["本地与官网内容一致"]`），避免多余采集请求。**official_ok 降级提示条（4ff8d68）**：`official_ok=False` 时顶部 `NoticeBanner`（warning 色调）统一解释降级框中摘要缺失、忽略禁用、无采集目标候选禁勾三项异常。**全不勾+确定改为零消费（2448bc7；降级文案分流 6a9a35d）**：全不勾确认后**零消费**——公告与差异原样保留、下次检查仍会提示，不再"视为已查看"整批消费（与界面承诺一致）；toast 按 `official_ok` 分流——正常模式「百科尚未同步更新，下次检查仍会提示；若不再需要提示，选中相应条目点击『忽略此条差异』」（降级模式忽略入口已禁，候选无 `content_hash` 写入无法匹配压制，toast 不给不可达的忽略指引），降级模式「官网数据获取失败，本次未做更改，下次检查仍会提示」。忽略骨架与 `CardSyncDialog` 共用 `IgnoreableDiffListMixin`（`ignore_ui_optional=True`：无 `AnnouncementService` 时整组隐藏忽略入口；保留 content_hash 门控——官网获取失败的差异忽略后无法匹配压制，不提供忽略；三态 summary 文案；忽略后过滤 `_candidates` 维持基数）。
 - **武将粒度精确消费（e435cb0）**：修复“勾选武将级、消费批次级”粒度错配——确认框留个别武将不勾时，旧逻辑更新成功后整批公告/差异/基线仍被全量消费，跳过武将的差异永久丢失且重查公告无法找回。协调器新增勾选名单传递链：`_on_hero_update_prepared` 把 `dialog.selected_candidates` 存入 `_pending_consume`，`_pending_phases` 收敛为单阶段 `[("specific", selected_ids)]`；`_on_fetch_completed` 采集成功后按名单精确消费（完成回调只消费已发起阶段——在途标记由 `_phase_gate = BusyGate()` 闸门承载，76875dd 收口）——① `AnnouncementService.mark_applied(names, hero_ids)` 公告只记名单内武将（`applied_heroes` 消费记录，提及武将全部消费完才置 APPLIED，否则保持 READY 继续提示）；② `_filter_consumed_diff()` 从内存 diff 剔除已消费条目（id 优先、按名兜底，与忽略名单过滤同口径；`removed` 不在更新流程内保留）；③ 百科快照基线**合并式前移**（服务层 `_merge_snapshot_baseline()`，只前移已消费武将的哈希条目，跳过武将旧基线保留，下次检查 diff 仍会报告其差异）。任一阶段失败或采集忙中断整条流，不清名单不消费（横幅保留可重试）。
 - **横幅关闭与状态指纹（925aa25 新增）**：横幅右侧新增「×」按钮（`ROLE_GHOST`，tooltip「关闭横幅；出现新公告或差异变化时会再次提示」），点击经 `dismiss_banner()` 置 `_banner_dismissed` 并隐藏横幅。重弹判定内聚在 `_update_banner_fingerprint()`（`_refresh_banner` 三处调用点——检查完成/采集完成/更新预备——天然全覆盖）：指纹 = 已见公告 `stable_key` 集合 + 百科差异总量（added/modified/removed 之和）+ READY 公告数，先判后记；已关闭状态下任一条件满足即解除关闭——①出现从未见过的 READY/PENDING 公告、②diff 总量比上次记录增大、③READY 数比上次记录增多（pending→ready 升级走 `current_names` 兜底时 diff 可能不变，只有 READY 计数能捕捉）。判定只认"变多"：更新成功后 diff 归零、ready 被 `mark_applied` 消化属预期回落，不会把用户已关闭的横幅再顶出来；diff 5→3→5 的波动会因重新变多而重弹。指纹只取横幅实际展示的公告（READY/PENDING），无关非武将公告不触发重弹。
 - 状态栏 `_progress_bar`：公告检查/更新前置拉取用不确定动画（`_show_indeterminate_progress`），武将采集子进程用确定进度（`_on_fetch_progress` 解析 `[n/N]`），完成/失败 `_hide_progress()` 隐藏。
@@ -577,11 +577,12 @@ PeakSelectPanel
 
 ### 3.14 数据新鲜度芯片（DataFreshnessChip，ae92c1d 新增）
 
-`DataFreshnessChip`（`src/ui/app/data_freshness_chip.py`，201 行）是底部状态栏第三枚常驻胶囊（`StatusChips` 之后 `addPermanentWidget`），以 `QLabel` 承载武将 / 攻略 / 相性 / 官方榜单四类数据的健康度聚合档位（green / yellow / red，前景/背景色值与 `status_chips` 同值：#176b36/#e4f5e8、#8a5a00/#fff3cd、#a12622/#fde8e8），文案为 `report.headline`（“数据：N天前”）。判定逻辑位于 `src/business/freshness.py`（449 行，归 module_business.md；档位周期写死 7 天一档，时间轴不健康阈值经 config.env 透传键 `DATA_FRESHNESS_TIMELINE_STALE_DAYS` 调节，见 module_config.md）。
+`DataFreshnessChip`（`src/ui/app/data_freshness_chip.py`，295 行）是底部状态栏第三枚常驻胶囊（`StatusChips` 之后 `addPermanentWidget`），以 `QLabel` 承载武将 / 攻略 / 相性 / 官方榜单四类数据的健康度聚合档位（green / yellow / red，前景/背景色值与 `status_chips` 同值：#176b36/#e4f5e8、#8a5a00/#fff3cd、#a12622/#fde8e8），文案为 `report.headline`（“数据：N天前”）。判定逻辑位于 `src/business/freshness.py`（543 行，归 module_business.md；档位周期写死 7 天一档，时间轴不健康阈值经 config.env 透传键 `DATA_FRESHNESS_TIMELINE_STALE_DAYS` 调节，见 module_config.md）。
 
 - **刷新自足，无轮询定时器** — 双路驱动：①六路服务信号订阅（hero/guide/synergy 三类 `fetch_completed`，lambda 归一 `Signal(bool)` 与 `Signal(bool, str)` 签名差异；`ai_workflow.guides_changed` / `synergies_changed`；`announcement_service.check_finished`）；②`QFileSystemWatcher` 监听 `data/` 目录（`WATCH_DIR`），`directoryChanged` 触发 500ms 单发 `QTimer` 去抖，超时回调做 mtime 快照比对——仅 `WATCHED_FILE_NAMES` 10 个目标文件（核心 json 与五份榜单 csv）变化才刷新，覆盖终端 `pull_data` 同步的原子落盘。
 - **点击 / 键盘菜单** — 点击或 Space / Return / Enter / Down（`StrongFocus`）在芯片下方弹 `QMenu` 三组：内容年龄（四项 detail 禁用行 + 时间轴警示行）、数据源周期（`SOURCE_CYCLE_ROWS` 三条静态文案）、建议操作（可点动作与禁用建议行并存；非武将项黄/红档给禁用建议行）。
-- **语料状态可点跳转行（1acaa76，P0-2）** — 菜单末尾新增「语料状态」section（`_add_corpus_section()`）：有 `stale_summary().stale_tasks` 欠账**且**主窗口有维护页（`hasattr(window, "_rag_maintenance")`，精简版无维护页不显示——提示无操作出口不如不显示）时出现，文案「语料 N 项待重建（前 3 个任务名等→ 前往知识库维护）」，点击发 `rag_maintenance_requested = Signal()`。菜单打开时现算摘要（`stale_summary` mtime-only 毫秒级，无需随 `_refresh` 缓存）；维护是本地页内操作而非采集任务，无忙碌守卫。
+- **语料状态可点跳转行（1acaa76，P0-2）** — 菜单末尾新增「语料状态」section（`_add_corpus_section()`）：有 `stale_summary().stale_tasks` 欠账**且**主窗口有维护页（`hasattr(window, "_rag_maintenance")`，精简版无维护页不显示——提示无操作出口不如不显示）时出现，文案「语料 N 项待重建（前 3 个任务名等→ 前往知识库维护）」，点击发 `rag_maintenance_requested = Signal()`。菜单打开时现算摘要（`stale_summary` mtime-only 毫秒级，无需随 `_refresh` 缓存）；维护是本地页内操作而非采集任务，无忙碌守卫；监测项开关取消 `corpus` 后整段静音（勾选状态本身即痕迹，不另出「已隐藏」提示）。
+- **监测项开关（e7e59b0）** — 菜单末尾「监测项」section（`_add_monitor_section()`）：5 个 checkable QAction（`_ITEM_LABELS` 武将/攻略/相性/官方榜单/语料欠账提醒，按显示序），**取消项完全退出判定与显示**——不参与胶囊颜色/headline 聚合、菜单不显示其清单行、其建议操作一并消失。可见性按构建形态裁剪（`_visible_item_keys()`）：武将/榜单恒见，攻略/相性仅完整版，语料仅完整版且有维护页；开关行常驻（禁用后判定 item 消失，但开关仍在才能重新勾回），可见性独立判定不随 `report.items` 派生。勾选态每次打开菜单现读 `load_disabled_items()`（菜单本就全量重建，UI 零缓存）。`_toggle_item(key)`：最后一项守卫（可见项仅剩一项启用时勾不掉 + toast「至少保留一项监测」，corpus 计入可见项计数——禁到只剩 corpus 时判定层 fail-safe 回全量兜底）→ 单键集合增删 → `save_env_file` 原子写回 `DATA_FRESHNESS_DISABLED_ITEMS` → 成功 `_refresh()` 立即更新胶囊；写失败（OSError）toast「保存失败，改动将不保留」，env 未变、重开菜单自然显示真实态（无 pending 态、无回滚）。QMenu triggered 后默认关闭，重开见新勾选态。
 - **建议动作路由与忙碌守卫** — 武将落后事件按模式能力路由：`SUGGEST_INCREMENTAL` → “增量获取武将数据（拉取新增武将）”、`SUGGEST_SPECIFIC` → “指定获取武将数据（替换模式，刷新过期武将）…”，混合批次两者并给。`_request_incremental()` / `_request_specific()` 先查 `hero_fetch_service.is_busy`，忙则 `show_toast` 拦截不发信号。
 - **接线** — 构造签名 `__init__(hero_fetch_service, guide_fetch_service, synergy_fetch_service, ai_workflow, announcement_service, parent=None)`；`main_window.py` 完成构造与三条信号 `fetch_incremental_requested` / `fetch_specific_requested` / `rag_maintenance_requested` 回接 `DialogCoordinator.request_fetch_incremental` / `request_fetch_specific` / `_goto_rag_maintenance`，动作不注册菜单栏。`_goto_rag_maintenance()`（主窗口新增，639 行预算）切 `QTabWidget` 到维护页——切页回调 `_on_workspace_page_changed` 会自动触发维护面板 `refresh()`，精简版无该页静默忽略。测试 `tests/test_data_freshness_chip.py`。
 
@@ -829,10 +830,10 @@ def update_recommendations(self, data: list[dict]) -> None:
 | 被调用方 | `src.main.py` | 应用入口创建 MainWindow 实例 |
 | 知识库维护 | [`./module_rag.md`](./module_rag.md) | 知识库维护工作台与索引精化对话框的依赖与被调用方 |
 
-## 七、代码规模（2026-11-20 基线）
+## 七、代码规模（2026-11-21 基线）
 
 - **测试模块数**：194 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 198 个）
-- **测试用例数**：2375 个 `test_*` 函数（2026-10-11 基线为 145 / 1626，2026-11-18 基线为 191 / 2316）
+- **测试用例数**：2397 个 `test_*` 函数（2026-10-11 基线为 145 / 1626，2026-11-21 基线为 194 / 2375）
 - **`main_window.py` 行数预算**：639 行（1acaa76 随 `_goto_rag_maintenance` 语料欠账跳转桥接自 630 上调并附注理由）（`FILE_LINE_BUDGETS` 棘轮；审计 G1 切片 4.2a/4.2b 将对话框开启器与菜单构建拆出 `dialog_coordinator.py` / `menu_builder.py`，方法数 49 → 33，原 819 行预算已随拆分收缩；后续忙碌守卫、自动公告检查、数据新鲜度芯片接线、备份恢复/首启向导/相性刷新入口、横幅关闭按钮棘轮上调）
 
 ## 八、知识库维护界面（已迁出）
@@ -975,3 +976,13 @@ def update_recommendations(self, data: list[dict]) -> None:
 - `DataFreshnessChip` 新增 `rag_maintenance_requested` 信号与菜单「语料状态」可点跳转行（见 §3.14）；`MainWindow._goto_rag_maintenance()` 桥接（行数预算 630→639，切页回调自动刷新面板状态）
 - 维护台本体（向量索引左栏项 / 执行历史回看 / 只读查看器 / 索引精化定位导航 / 建议进度小窗）记录于 [`./module_rag.md`](./module_rag.md) §3.10 / §4.4
 - 架构棘轮：`main_window.py` 630→639；代码规模 194 文件 / 2375 个 `test_*` 函数（新增 `test_hero_update_confirm_dialog` 扩展 / `test_ai_generation_workflow` 预检用例 / `test_data_freshness_chip` 跳转行三态 / `test_announcement` 部分消费与降级用例等）
+
+## 本轮文档校准（2026-11-21）
+
+自基线 `1acaa76`（2026-11-20）以来共 4 个提交（至 `e7e59b0`），本模块受影响项：
+
+- **`DataFreshnessChip` 菜单「监测项」开关**（`e7e59b0`，见 §3.14）：5 个 checkable 开关按可见性裁剪，取消项完全退出判定与显示；`_toggle_item` 最后一项守卫 → 单键集合增删 → `save_env_file` 原子写回 `DATA_FRESHNESS_DISABLED_ITEMS` → 成功 `_refresh()`；写失败 toast 不保留（无 pending 态无回滚）；`_add_corpus_section` 叠加 corpus 静音条件。行数 201 → 295（架构棘轮同步）
+- **`AnnouncementUpdateCoordinator._on_hero_update_prepared()` 全不勾零消费**（`2448bc7`，见 §3.9）：全不勾+确定不再调 `mark_applied()` 整批消费（该分支已从服务/数据层删除），公告与差异原样保留、零消费故无需刷新横幅/对话框；采集成功 toast 尾串追加「未勾选的武将下次检查仍会提示」与界面承诺对齐
+- **降级模式 toast 分流**（`6a9a35d`）：全不勾 toast 按 `official_ok` 分流文案——正常模式引导忽略名单入口（可达），降级模式只说明「官网数据获取失败，本次未做更改，下次检查仍会提示」（忽略入口在降级模式下已禁，不给不可达的指引）
+- **修正的失效描述**：§3.9 与上文 2026-11-20 校准节中「全取消 toast 引导使用忽略名单（已保留本地武将内容…）」为 `e435cb0/4ff8d68` 时的行为，已被 `2448bc7/6a9a35d` 取代——现行行为以本节与 §3.9 为准
+- `MainWindow` / 对话框体系其余链路无变更；维护台双运行器互斥（`f27dfe3`）记录于 [`./module_rag.md`](./module_rag.md)

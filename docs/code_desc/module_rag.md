@@ -1,7 +1,7 @@
 # 模块：RAG 知识库（语料 / 向量索引 / 混合检索 / 索引精化 / 元规则维护）
 
 > 对应目录：`src/rag/`、`src/business/rag/`、`src/business/maintenance/`（RAG 三文件）、`src/ui/maintenance/`、`src/scripts/`（语料构建与维护脚本）
-> 代码基线：`1acaa76`（2026-11-20）。历史基线：`a5fde97`（2026-11-18）。历史增量：commit `d1ff679`（2026-11-14）→ 2026-11-14 增量更新（含 `3c19e7e` RAG 索引编码器指纹双端校验）；`a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
+> 代码基线：`e7e59b0`（2026-11-21）。历史基线：`1acaa76`（2026-11-20）、`a5fde97`（2026-11-18）。历史增量：commit `d1ff679`（2026-11-14）→ 2026-11-14 增量更新（含 `3c19e7e` RAG 索引编码器指纹双端校验）；`a63bc3c`（2026-10-23）→ 2026-10-23 增量更新（含 `2f4a529` RAG 域审查修复批——审计容错、建议线程并发收口、语料写前快照与用量补记；`3a8845f` 导入前备份与源结构校验加固并补规则确认服务测试；`25606a8` 放宽 rule_doc_panel.py 行数预算至 935；`9ccc2fc` 第二梯队审查修复批）
 > 职责：维护游戏规则的三层语料资产，构建本地向量索引，向 AI 生成注入检索到的规则依据，并提供一套人工维护工作台
 
 ---
@@ -36,7 +36,7 @@
 ### 代码规模
 
 - 测试模块：194 个含 `test_*` 函数的测试文件（`tests/` 下 py 文件共 198 个）
-- 测试用例：2375 个 `test_*` 函数（2026-10-11 基线为 145 / 1626；2026-11-18 基线为 191 / 2316）
+- 测试用例：2397 个 `test_*` 函数（2026-10-11 基线为 145 / 1626；2026-11-21 基线为 194 / 2375）
 
 ---
 
@@ -350,6 +350,8 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 
 **保存→重建闭环**：维护对象保存后发 `data_changed` → `refresh()` → 左栏对应项状态点即时变"待重建"并亮出 ↻，全程不离开当前视图。重建档位：左栏 ↻ 单项——语料任务走 `--only <语料>`（`_on_rebuild_requested` 按任务名分派），**「向量索引」第 11 项待同步时 ↻ 走 `python -m src.rag.indexer` 全量重建**（eab529d，分钟级，复用 `ScriptRunner` 忙守卫与底部日志实时输出）；顶部"重建全部语料"`--force`、"重建语料+索引"`--force --build-index`（全模块唯一 `ROLE_PRIMARY`）。`_run` / `_run_index` 抽出公共 `_run_module(module, extra_args)` 承载忙守卫/日志编排/启动失败复位，左栏重建入口由 lambda 改具名槽。
 
+**双运行器互斥（f27dfe3，P1-3）**：`rag_maintenance_panel`（语料/索引构建运行器）与内嵌 `rule_doc_panel`（元规则脚本运行器）共享底部日志与执行历史快照（单一 `_active_run`），并发会让快照归属错乱（元规则输出灌进语料重建的记录、退出码封错条目）。入口处**双向拦截**：宿主构造 `RuleDocPanel` 时注入 `external_busy_check=lambda: self._runner.is_running()`，`_run_script()` 起手检查自身 runner + 外部检查任一在跑即弹「正在执行」拦截；反向 `_run_module()` 忙守卫扩为 `self._runner.is_running() or self._rule_doc.is_script_running()`。联动锁：元规则脚本 `script_started` → `_set_busy(True)`（锁页面执行入口，`set_scripts_enabled(False)` 管住外壳「刷新状态」按钮——子页签脚本按钮启用随勾选数实时重算，外壳强禁会被覆盖，由 `_run_script` 入口拦截兜底）、`script_finished` → `_set_busy(False)`。`RuleDocPanel` 新增公共方法 `is_script_running()` / `set_scripts_enabled(enabled)`；`external_busy_check=None` 时本面板独立复用（仅自身 runner 互斥）。
+
 ### 3.9 检索诊断与评估历史（2081b5b）
 
 **检索诊断**（`src/business/rag/retrieval_diagnostic.py` + `src/ui/maintenance/retrieval_diagnostic_dialog.py`）是只读定位工具：在"语料/索引维护前后召回为什么变了"的场景下，把每次检索的候选去向摆到桌面上。业务层 `diagnose(query, top_k, heroes)` 纯 dict 输出、不碰 Qt（函数内惰性 import Retriever），返回 `{query, heroes, top_k, items, trace, backend, elapsed_ms}`；`DiagnosticWorker(QThread)` 把检索搬出 GUI 线程，模块级 `LIVE_WORKERS: set` 兜底持有运行中线程——对话框销毁后 Python 引用丢失也不会连带析构运行中 QThread（Qt6 对 running QThread 析构是 qFatal），线程结束自移除。UI 层抽屉呈现 9 列候选去向表（block_id / 类型 / 武将 / 得分 / 来源 / rrf / 当前版 / as_of / 剔除原因），剔除原因经 `DROP_LABELS` 中文映射（与 retriever 五个丢弃点一一对应，有测试防新增丢弃点漏映射）；`below_threshold` 行的 rrf 列显示占位符"—"（RRF 融合前被丢弃，无融合分）。一个 Qt 细节：表格填充前必须 `setSortingEnabled(False)`、填完恢复——排序开启下逐 `setItem` 即时重排会错位后续按坐标写入（实测丢列/串行）。入口在知识库维护页「检索诊断」按钮（只读，关闭不触发 `refresh()`）。
@@ -577,12 +579,12 @@ src/scripts/                      # 语料构建与维护脚本（见 4.5 参数
 | 文件 | 关键接口 |
 |------|---------|
 | `maintenance_workspace.py` | `MaintenanceSourceNav`（`WIDTH=230`；信号 `source_selected` / `rebuild_requested` / `meta_requested`；`add_group` / `add_source` / `select` / `set_selected` / `set_task_states` / `item_keys` / `status_text`；状态词 → 色调映射含 `待同步`=warning / `未构建`=danger，`待同步`与`待重建`同亮 ↻ 单项重建按钮）；`MaintenanceWorkspace`（`LOG_COLLAPSED_HEIGHT=32` / `LOG_EXPANDED_HEIGHT=180`；`add_group` / `add_source` / `select_source` / `has_source` / `current_source_key` / `set_interactive` / `expand_log` / `collapse_log` / `is_log_expanded` / `on_log_output` / `reset_unread` / `set_log_meta` / `set_log_history(items)` 历史下拉刷新——`history_selected = Signal(int)` 仅用户点选上报） |
-| `rag_maintenance_panel.py` | `RagMaintenancePanel`（信号 `data_changed`——预留信号，当前全仓无消费方，注释说明未来组合根桥接方向；`refresh()` / `reload_data()` / `_run_module(module, extra_args)`（`_run` / `_run_index` 薄包装）/ `_jump_to_issue(issue)` / `_show_corpus_meta(key)` / `_show_index_meta()` / `_open_diagnostic()`——打开只读检索诊断抽屉，关闭不触发 `refresh()`；`_refinement_focus_queries(focus)` 时效命中清单 → 去重保序定位搜索词列表，单数版 `_refinement_focus_query` 保留为薄包装）；左栏 11 项（`EDITABLE_SOURCE_ITEMS` 5 + `READONLY_CORPUS_ITEMS` 5 + `INDEX_TASK_NAME` 向量索引）；`task_states` / `index_state` / `INDEX_TASK_NAME` / `INDEX_DIR` 顶部 re-export 自 `corpus_freshness`（模块级名字兼容）；执行历史快照 `_log_runs`（`_MAX_LOG_RUNS=10` / `_MAX_RUN_TEXT_CHARS=100_000`）+ `_begin_log_run` / `_finish_log_run` / `_sync_history_combo` / `_show_log_run`；审计横幅 `_banner_expanded` 展开状态跨刷新保留 + `_toggle_audit_banner()` |
+| `rag_maintenance_panel.py` | `RagMaintenancePanel`（信号 `data_changed`——预留信号，当前全仓无消费方，注释说明未来组合根桥接方向；`refresh()` / `reload_data()` / `_run_module(module, extra_args)`（`_run` / `_run_index` 薄包装；忙守卫含 `self._rule_doc.is_script_running()` 跨运行器互斥，f27dfe3）/ `_jump_to_issue(issue)` / `_show_corpus_meta(key)` / `_show_index_meta()` / `_open_diagnostic()`——打开只读检索诊断抽屉，关闭不触发 `refresh()`；`_refinement_focus_queries(focus)` 时效命中清单 → 去重保序定位搜索词列表，单数版 `_refinement_focus_query` 保留为薄包装）；左栏 11 项（`EDITABLE_SOURCE_ITEMS` 5 + `READONLY_CORPUS_ITEMS` 5 + `INDEX_TASK_NAME` 向量索引）；`task_states` / `index_state` / `INDEX_TASK_NAME` / `INDEX_DIR` 顶部 re-export 自 `corpus_freshness`（模块级名字兼容）；执行历史快照 `_log_runs`（`_MAX_LOG_RUNS=10` / `_MAX_RUN_TEXT_CHARS=100_000`）+ `_begin_log_run` / `_finish_log_run` / `_sync_history_combo` / `_show_log_run`；审计横幅 `_banner_expanded` 展开状态跨刷新保留 + `_toggle_audit_banner()` |
 | `readonly_viewer_dialog.py` | `ReadonlyViewerDialog(title, subtitle, meta_text, body, *, note="", parent)`（6db5355 新增，96 行）：只读长文本查看器——元信息可选中复制、可选 ⚠ 警示行、只读 `QPlainTextEdit` 正文（408KB 级语料惰性布局，不走 2 万字符 Markdown 渲染上限）、查找框回车/「下一个」到尾回绕续找（`_find_next`），「无匹配」状态提示；供语料内容查看与执行历史弹窗共用 |
 | `suggest_progress_dialog.py` | `SuggestProgressDialog(total, parent)`（dc377e6 新增，79 行）：批量 LLM 建议非模态进度小窗——进度条「建议中 %v/%m」、状态行「失败 N · 最新完成：X」（失败块传 `latest_name=None` 只累计失败不冲掉成功记录）、去掉标题栏关闭按钮只留「取消」（`cancelled = Signal()` 交宿主善后，退出路径不绕开宿主）；宿主逐块结果回调经 `update_progress(done, total, failed, latest_name)` 喂数 |
 | `retrieval_diagnostic_dialog.py` | `RetrievalDiagnosticDialog`（880×560 只读抽屉，2081b5b 新增）：查询框（回车触发）+ `top_k` 下拉（5/8/12/20）+ 9 列候选去向表（排序开启、首列 Stretch）；`DROP_LABELS` 剔除原因中文映射；填充前 `setSortingEnabled(False)` 填完恢复（防逐 setItem 即时重排串行）；`closeEvent` 只摘引用 + `worker.wait(2000)`，不 deleteLater 运行中线程（`LIVE_WORKERS` 兜底） |
 | `index_refinement_dialog.py` | 清单/编辑构建与纯渲染拆入 `refinement_list_pane.py` / `refinement_editor_pane.py`（对话框以 ~20 个单行 property 桥保持既有测试锚点名）；`IndexRefinementDialog(corpus_dir, parent, *, focus_queries=None)`（bd0ee62 / c0ef7a8：`focus_queries` 定位搜索词列表），构造时 `resize(1160, 720)` 作为最小窗口，`_open_refinement()` 打开前再按主窗口尺寸 `resize`（否则工作台最小尺寸会把它撑到整屏）。顶部三档范围 `pending`/`curated`/`all`；行状态 `pending`/`suggested`/`modified`/`refined`/`generated`；字段状态 `empty`/`llm`/`manual`/`saved`。时效复核定位：`_apply_focus_query(query)` 自动切「全部」范围 + 回写范围按钮高亮 + 预填搜索词立即过滤（不等 250ms 防抖）；`_goto_next_focus()`「过期复核 i/N [下一条 ▸]」环形逐站导航（循环中重置手动改过的搜索词/范围，无导航目标整组隐藏）。建议进度小窗（dc377e6）：`_suggest_all` 先建小窗后启动（身份比对守卫防同步替身链路下已关闭小窗复活）、`_on_suggest_result` 逐块喂进度（丢弃守卫之前喂数，被丢弃块计数照走）、`_cancel_suggest` 取消后留在对话框恢复按钮（已返回建议保留在清单）、`reject` 先行关闭小窗；关闭善后三路径（任务结束/取消/宿主关闭）收口 `_close_suggest_progress()`；单块建议按钮「建议中…」文字与可用性统一收口 `_update_overview_buttons` |
-| `rule_doc_panel.py` | `RuleDocPanel(root)`，四个子页签（文档状态 / 数据段差异 / 提案工作台 / 疑难登记）；信号 `data_changed` / `script_started` / `script_output(bytes)` / `script_finished(int)` |
+| `rule_doc_panel.py` | `RuleDocPanel(root, parent=None, *, external_busy_check=None)`（宿主注入跨面板互斥检查，None 时仅自身 runner 互斥），四个子页签（文档状态 / 数据段差异 / 提案工作台 / 疑难登记）；信号 `data_changed` / `script_started` / `script_output(bytes)` / `script_finished(int)`；公共方法 `is_script_running()`（供宿主互斥检查）/ `set_scripts_enabled(enabled)`（宿主构建执行期间禁脚本入口） |
 | `card_points_panel.py` | `CardPointsPanel(repository, root)`，信号 `data_changed`；牌行 + `judge_rules` 判定规则增删改；「从 xlsx 导入」经 `ScriptRunner` 异步执行 |
 | `equip_attrs_panel.py` | `EquipAttrsPanel(repository)`，信号 `data_changed`；列 `("名称","细分类型","攻击范围","距离修正","备注")`，名称/备注只读 |
 
@@ -963,3 +965,11 @@ TASKS: list[dict] = [
 - **审计横幅展开收起**（`eab529d`）：超过 3 条时由折叠文案改「展开全部（还有 N 条）」按钮，展开状态跨刷新保留
 - 架构棘轮登记：`index_refinement_dialog.py` 806→842→899（方法 62→64→66）、`rag_maintenance_panel.py` 706→723→733→645（先升后随判定下沉下调）、`audit_service.py` 574、`maintenance_workspace.py` 历史下拉
 - 代码规模：194 文件 / 2375 个 `test_*` 函数（新增 `test_corpus_freshness` / `test_readonly_viewer_dialog` / `test_suggest_progress_dialog` 等）
+
+## 本轮文档校准（2026-11-21）
+
+自基线 `1acaa76`（2026-11-20）以来共 4 个提交（至 `e7e59b0`），本模块受影响项：
+
+- **维护台双运行器互斥**（`f27dfe3`，P1-3，见「保存→重建闭环」与 §4.4）：`rag_maintenance_panel` 与内嵌 `rule_doc_panel` 共享底部日志与执行历史快照（单一 `_active_run`），并发会让快照归属错乱——入口双向拦截：宿主注入 `RuleDocPanel(external_busy_check=lambda: self._runner.is_running())`，`_run_script()` 检查自身 + 外部；`_run_module()` 忙守卫扩为 `_runner.is_running() or _rule_doc.is_script_running()`；元规则脚本 `script_started/finished` → `_set_busy(True/False)` 联动锁页面执行入口（`set_scripts_enabled` 管外壳「刷新状态」按钮，子页签按钮由入口拦截兜底）。`RuleDocPanel` 新增 `is_script_running()` / `set_scripts_enabled()` 公共方法
+- 架构棘轮：`rag_maintenance_panel.py` 645 → **652**（元规则脚本忙碌联动）、`rule_doc_panel.py` 337 → **356**（external_busy_check 入口拦截 + 两公共方法）；`src/rag/`、`src/scripts/`、`src/business/rag/` 本轮无代码变更
+- 回归测试：`test_rag_maintenance_panel` 扩展互斥用例（+64 行），`test_poll_coordinator` 补探测命中拍生产路径回归断言（`f27dfe3`，P1-4）

@@ -2,7 +2,7 @@
 
 > 对应目录：`src/scraper/official_source/` + 根 CLI 入口
 > 职责：从官网解析武将数据、数据清洗与校验（**技能描述拆段纯文本标题等值判定**）、头像下载、**写入前守卫（全量五道规模守卫 + 增量损坏硬停）**、**爬虫合规（如实标识 / robots.txt 规则执行 / 自动化访问披露）**、**本地扩展字段保护**、**公告更新候选武将粒度过滤**
-> 文档日期：2026-11-20（基线 `1acaa76`）
+> 文档日期：2026-11-21（基线 `e7e59b0`）
 
 ---
 
@@ -500,12 +500,12 @@ def transform(raw: dict) -> dict | None:
 
 ---
 
-## 七、代码规模（2026-11-20）
+## 七、代码规模（2026-11-21）
 
 - `src/scraper/official_source/` 共 8 文件 2406 行（`announcement.py` 748 / `crawler.py` 532 / `incremental.py` 340 / `hero_fields.py` 255 / `full.py` 220 / `adapter.py` 201 / `card_baike.py` 109 / `__init__.py` 1）
 - `tests/test_crawler.py` 共 73 个 `test_*` 函数（覆盖状态机解析、写入守卫、robots 规则执行、本地字段保护、HTML 清洗、增量健壮性）；`tests/test_announcement.py` 共 87 个（覆盖章节分类、候选构建、武将粒度消费、降级过滤等）
 - 测试模块数：194 文件（`tests/` 含 `test_*` 函数的 py 文件）
-- 测试用例数：2375 个 `test_*` 函数
+- 测试用例数：2397 个 `test_*` 函数
 
 ---
 
@@ -571,3 +571,7 @@ def transform(raw: dict) -> dict | None:
 - **公告更新候选武将粒度过滤**（`e435cb0`）：`build_update_candidates()` 跳过 ready 公告 `applied_heroes` 已消费武将；公告来源的本地未收录候选在官网可用时补官网 `hero_id` 作指定采集目标（见 §3.5）
 - `announcement.py` 行数预算 742 → 750（棘轮登记）；代码规模 8 文件 2406 行
 - `src/scraper/ai/` 子域本轮无代码变更（生成前语料知情提示为 UI 层变更，见 [`./module_ui.md`](./module_ui.md) §3.6）
+
+## 本轮文档校准（2026-11-21）
+
+自基线 `1acaa76`（2026-11-20）以来共 4 个提交（至 `e7e59b0`），爬虫域（`src/scraper/official_source/`）无代码变更——解析、清洗守卫、写入守卫与合规口径延续；测试规模口径刷新为 2397 个 `test_*` 函数。
