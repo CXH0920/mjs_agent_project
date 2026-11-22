@@ -722,7 +722,9 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # 环形循环（P1-1 ii，复用 _apply_focus_query 定位原语与 _update_overview 刷新）
     # 842 → 899：批量建议进度小窗接线（P1-2）——创建/逐块喂进度/取消善后
     # _cancel_suggest 与三路径关闭收口 _close_suggest_progress、单块按钮文字反馈
-    "ui/maintenance/index_refinement_dialog.py": 899,
+    # 899 → 901：_apply_focus_query 高亮回写由 button(2) 魔法索引改按 scope 名
+    # 取按钮（_scope_buttons 映射声明与存入，消除与范围按钮枚举顺序的隐性耦合）
+    "ui/maintenance/index_refinement_dialog.py": 901,
     # 911 → 492：两刀绞杀——4.6a 名称证据解析与页面消歧出仓 name_resolution.py，
     # 4.6b 批量画布三函数出仓 batch_canvas.py（审计 G3）
     # 492 → 498：B1 修复批——team 徽记归一化失败后的主/复核引擎链式单条重试
