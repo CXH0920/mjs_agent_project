@@ -3722,7 +3722,7 @@ Qt6 对 `FailedToStart` 只发 `errorOccurred`、**不发** `finished`。`Script
 ### 23.2 审计时效复核定位与逐站导航（bd0ee62 / c0ef7a8，P1-1）
 
 - **audit_service 结构化命中清单**：三类时效审计条目（`curated_stale` / `curated_stale_possible` / `card_curated_stale`）补挂 `target` 字段为结构化命中清单（hero/skill/card 与精化、调整日期的 dict 列表）——此前目标只存在于 message 拼接文本，跳转定位无从取数。
-- **跳转链**：`_jump_to_issue` 时效分支把 `issue.target` 传入 `_open_refinement()`，经 `RagMaintenancePanel._refinement_focus_queries(focus)` 提取定位搜索词列表——`skill` 名优先精确到块，武将级回退 `hero` 名、卡牌级取 `card` 名，`dict.fromkeys` 去重保序（同武将多块只留一站防重复建站），空或异形结构降级为普通打开不定位；原单数版 `_refinement_focus_query` 保留为薄包装不破坏既有测试锚点。
+- **跳转链**：`_jump_to_issue` 时效分支把 `issue.target` 传入 `_open_refinement()`，经 `RagMaintenancePanel._refinement_focus_queries(focus)` 提取定位搜索词列表——`skill` 名优先精确到块，武将级回退 `hero` 名、卡牌级取 `card` 名，`dict.fromkeys` 去重保序（同武将多块只留一站防重复建站），空或异形结构降级为普通打开不定位。
 - **弹窗定位**：`IndexRefinementDialog` 构造参数 `focus_query` 升级为 `focus_queries` 列表——`_apply_focus_query()` 自动切换「全部」范围（过期块均为已精化块，默认「待精化」范围不可见）并回写范围按钮高亮防视觉错位，预填搜索词立即过滤（不等 250ms 防抖），复用既有渲染链自动选中目标块并加载右侧工作区；无匹配时保留搜索词显示空态提示而非静默清空。
 - **逐站导航**：总览条新增「过期复核 i/N [下一条 ▸]」导航组——携带完整命中清单时 `_goto_next_focus()` 逐站环形循环定位（`(i+1) % len` 回绕，支持回头复查跳过的条目），循环中自动重置用户手动改过的搜索词与范围筛选（导航不被手动浏览打断）；无导航目标时整组隐藏，普通打开不出现。
 

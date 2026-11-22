@@ -513,12 +513,6 @@ class RagMaintenancePanel(QWidget):
                     queries.append(query)
         return list(dict.fromkeys(queries))
 
-    @staticmethod
-    def _refinement_focus_query(focus: object) -> str:
-        """时效命中清单 → 首个定位搜索词（技能名优先，回退武将/卡牌名）。"""
-        queries = RagMaintenancePanel._refinement_focus_queries(focus)
-        return queries[0] if queries else ""
-
     def _open_diagnostic(self) -> None:
         from src.ui.maintenance.retrieval_diagnostic_dialog import (
             RetrievalDiagnosticDialog,

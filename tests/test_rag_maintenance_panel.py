@@ -261,17 +261,6 @@ def test_jump_to_card_curated_stale_opens_refinement(tmp_path: Path, monkeypatch
     panel.close()
 
 
-def test_refinement_focus_query_prefers_skill_then_hero_or_card() -> None:
-    """命中清单 → 定位搜索词：技能名优先（精确到块），回退武将/卡牌名。"""
-    assert RagMaintenancePanel._refinement_focus_query(
-        [{"skill": "观星", "hero": "诸葛亮"}]) == "观星"
-    assert RagMaintenancePanel._refinement_focus_query([{"hero": "张飞"}]) == "张飞"
-    assert RagMaintenancePanel._refinement_focus_query([{"card": "多多益善"}]) == "多多益善"
-    assert RagMaintenancePanel._refinement_focus_query(None) == ""
-    assert RagMaintenancePanel._refinement_focus_query([]) == ""
-    assert RagMaintenancePanel._refinement_focus_query(["非字典"]) == ""
-
-
 def test_refinement_focus_queries_dedup_keeps_order() -> None:
     """P1-1 ii：命中清单 → 导航站列表（去重保序，同武将多块只留一站）。"""
     assert RagMaintenancePanel._refinement_focus_queries([

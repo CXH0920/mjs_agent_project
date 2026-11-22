@@ -2426,3 +2426,50 @@ def test_fetch_completed_toast_appends_corpus_stale_suffix(monkeypatch) -> None:
 
     assert toasts == [
         "武将数据已采集完成，请重新加载数据。\n4 项语料待重建（武将语料、武将分类语料、组合语料等）"]
+
+
+def _stale_summary(stale: list[str]) -> object:
+    """构造欠账摘要假对象；index/built_at 不参与尾串拼接，填占位值。
+
+    生产 stale_summary 直读数据盘 mtime，patch 它（而非 _corpus_stale_suffix
+    整体）即可直测拼串规则，断言不随数据盘状态漂移。
+    """
+    from src.business.rag.corpus_freshness import CorpusStaleSummary
+
+    return CorpusStaleSummary(
+        stale_tasks=stale, index_status="最新", corpus_built_at="11-02 08:00")
+
+
+def test_corpus_stale_suffix_empty_when_no_stale_tasks(monkeypatch) -> None:
+    """无欠账返回空串：采集成功 toast 保持原文案，不凭空多出提醒行。"""
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    monkeypatch.setattr(
+        coordinator_module, "stale_summary", lambda: _stale_summary([]))
+
+    assert coordinator_module._corpus_stale_suffix() == ""
+
+
+def test_corpus_stale_suffix_lists_all_names_up_to_three(monkeypatch) -> None:
+    """欠账恰 3 项时全列、不加「等」：>3 是严格大于，边界处不得吞掉任务名。"""
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    monkeypatch.setattr(
+        coordinator_module, "stale_summary",
+        lambda: _stale_summary(["武将语料", "武将分类语料", "组合语料"]))
+
+    assert coordinator_module._corpus_stale_suffix() == (
+        "\n3 项语料待重建（武将语料、武将分类语料、组合语料）")
+
+
+def test_corpus_stale_suffix_truncates_beyond_three(monkeypatch) -> None:
+    """欠账超 3 项只列前 3 加「等」；计数为真实任务总数，不随截断变小。"""
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    monkeypatch.setattr(
+        coordinator_module, "stale_summary",
+        lambda: _stale_summary(
+            ["武将语料", "武将分类语料", "组合语料", "武将攻略语料"]))
+
+    assert coordinator_module._corpus_stale_suffix() == (
+        "\n4 项语料待重建（武将语料、武将分类语料、组合语料等）")
