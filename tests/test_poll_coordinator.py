@@ -554,8 +554,9 @@ def test_probe_poll_submits_without_recognition() -> None:
 
 def test_probe_poll_rejection_counts_as_all_rejected() -> None:
     """探测拒识结果计入全部拒识状态：下一拍若画面静止且任务集未变，
-    A1 可安全接管（同画面模板结论必然相同）。"""
+    A1 整拍接管（同画面模板结论必然相同，探测也不重跑）。"""
     from PIL import Image
+    from PySide6.QtCore import Qt
 
     capture = SimpleNamespace(connected=True)
     ocr_service = _ReusePollOcrService([], probe_tasks=["hero_selection"])
@@ -563,10 +564,24 @@ def test_probe_poll_rejection_counts_as_all_rejected() -> None:
     capture_service.probe_rejects = {"hero_selection"}
     coordinator = PollCoordinator(capture_service, ocr_service, lambda: [])
 
+    # 无事件循环下跨线程 Qt 信号不投递；DirectConnection 让 poll 线程直调收集器，
+    # 两拍结果皆可观测（跳过拍回写的 _last_poll_* 与执行拍同值，不可作同步点）
+    received: list[PollResult] = []
+    coordinator._poll_result_received.connect(received.append, Qt.DirectConnection)
+
     coordinator._on_poll_tick()
     _wait_poll_state(coordinator, ("hero_selection",), all_rejected=True)
 
     assert capture_service.submissions == [("hero_selection", False)]
+
+    # 第二拍同帧：A1 判定整拍可跳，不再提交探测（模板匹配也不跑）
+    coordinator._on_poll_tick()
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and len(received) < 2:
+        time.sleep(0.01)
+    assert len(received) == 2
+    assert received[1].frame_unchanged is True
+    assert capture_service.submissions == [("hero_selection", False)]  # 第二拍零新提交
 
 
 def test_probe_hit_poll_keeps_idle_watch_counting() -> None:

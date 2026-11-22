@@ -807,7 +807,9 @@ def test_focus_query_switches_scope_and_selects_match(tmp_path: Path) -> None:
     _app()
     dialog = IndexRefinementDialog(_curated_corpus(tmp_path), focus_queries=["已精化"])
     assert dialog._scope == "all"
-    assert dialog._scope_group.button(2).isChecked()  # 程序切范围后按钮高亮同步
+    # 程序切范围后「全部」按钮高亮同步（按文本定位，不依赖枚举序）
+    scope_buttons = {b.text(): b for b in dialog._scope_group.buttons()}
+    assert scope_buttons["全部"].isChecked()
     assert dialog._search_edit.text() == "已精化"
     assert dialog._current is not None
     assert dialog._current.block_id == "card_3_已精化"

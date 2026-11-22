@@ -175,7 +175,8 @@ def test_hero_categorization_updates_category_detail(tmp_path: Path) -> None:
 
 
 def test_category_detail_member_list_collapsed_by_default(tmp_path: Path) -> None:
-    """>8 人名单默认只列前 8 名，「展开全部」显示全量，「收起」还原，切分类自动收起。"""
+    """>8 人名单默认只列前 8 名，「展开全部」显示全量，「收起」还原；
+    展开态按分类名单槽记忆，切走自然收起、切回保持展开。"""
     _app()
     panel, _ = _panel(tmp_path)
     panel._repo.update_hero_names({"庞煖"} | {f"武将{i}" for i in range(1, 10)})
@@ -201,12 +202,15 @@ def test_category_detail_member_list_collapsed_by_default(tmp_path: Path) -> Non
     assert _toggle_button().text() == "收起"
     _toggle_button().click()
     assert len(_member_items()) == 8
-    # 切到其他分类再切回：默认收起
+    # 再次展开后切走再切回：展开态按分类名记忆（_expanded_category 单槽），
+    # 切走的新分类自然收起，切回原分类保持展开
+    _toggle_button().click()
+    assert len(_member_items()) == 10
     panel._category_tab.current_category = "防御/保核型"
     panel._category_tab.refresh()
     panel._category_tab.current_category = "高爆发型"
     panel._category_tab.refresh()
-    assert len(_member_items()) == 8
+    assert len(_member_items()) == 10
 
 
 def test_popup_callback_after_combo_destroyed() -> None:

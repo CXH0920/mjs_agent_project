@@ -114,7 +114,7 @@ class IndexRefinementDialog(QDialog):
         """
         self._scope = "all"
         # _set_scope 只由按钮单向驱动，程序切范围须回写按钮高亮防视觉错位
-        self._scope_group.button(2).setChecked(True)
+        self._scope_buttons["all"].setChecked(True)
         self._search_edit.setText(query)  # 同步触发 250ms 防抖（同词重滤幂等）
         self._apply_filter()
 
@@ -248,6 +248,7 @@ class IndexRefinementDialog(QDialog):
         # 模式切换：待精化 / 已精化 / 全部（overview_label 占 stretch，按钮组靠右）
         self._scope_group = QButtonGroup(self)
         self._scope_group.setExclusive(True)
+        self._scope_buttons: dict[str, QPushButton] = {}
         for index, (scope, label) in enumerate((("pending", "待精化"), ("curated", "已精化"), ("all", "全部"))):
             button = QPushButton(label)
             button.setCheckable(True)
@@ -255,6 +256,7 @@ class IndexRefinementDialog(QDialog):
             set_ui_role(button, ROLE_GHOST)
             button.clicked.connect(lambda _=False, s=scope: self._set_scope(s))
             self._scope_group.addButton(button, index)
+            self._scope_buttons[scope] = button
             bar_layout.addWidget(button)
         return bar
 

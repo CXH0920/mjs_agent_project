@@ -1344,6 +1344,33 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
     }
 
 
+def test_filter_consumed_diff_falls_back_to_name_and_keeps_removed() -> None:
+    """消费剔除规则：id 优先、无 id（或 id 不中）按名兜底；removed 原样保留。
+
+    名兜底与忽略名单过滤（baike_ignore_store._entry_for）同口径——兜底静默
+    失效会让已消费差异下次检查重现（用户侧表现为重复提示）。
+    """
+    diff = {
+        "added": [
+            {"name": "贾诩"},                # 无 id → 按名兜底剔除
+            {"name": "山涛", "id": 999},     # id 不中、名中 → 名兜底剔除
+            {"name": "新武将甲", "id": 200},  # 名不在消费集 → id 优先剔除
+            {"name": "马钧", "id": 184},     # 双不中 → 保留
+        ],
+        "modified": [{"name": "王元姬"}],    # modified 组同规则 → 剔除
+        "removed": [{"name": "羊祜", "id": 5}],  # 不在更新流程内 → 保留
+    }
+
+    kept = AnnouncementUpdateCoordinator._filter_consumed_diff(
+        diff, {"贾诩", "山涛", "王元姬"}, {200})
+
+    assert kept == {
+        "added": [{"name": "马钧", "id": 184}],
+        "modified": [],
+        "removed": [{"name": "羊祜", "id": 5}],
+    }
+
+
 def test_hero_update_all_unchecked_defers_batch_and_guides_ignore(monkeypatch) -> None:
     """全不勾 + 确定：零消费（公告/基线/diff 原样，下次检查仍提示），toast 引导忽略。"""
     from PySide6.QtWidgets import QDialog
