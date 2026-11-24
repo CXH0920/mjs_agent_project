@@ -103,6 +103,36 @@ def test_missing_source(tmp_path: Path) -> None:
     assert rows["特殊机制语料"] == "缺源"
 
 
+def test_task_states_tolerates_file_vanishing_mid_check(
+    tmp_path: Path, monkeypatch) -> None:
+    """判定途中文件消失不得抛异常：修改时间须一步取到，不能「先判存在、再取」。
+
+    分两步时文件恰在缝隙被删，会抛未捕获 FileNotFoundError 冒泡到 Qt 槽，中断
+    整次刷新/胶囊菜单构建。模拟：目标文件首次访问成功（还在），其后视作已删除。
+    """
+    root = _make_root(tmp_path)
+    before = {row["name"]: row["status"] for row in task_states(root, with_counts=False)}
+    # 取只被一个任务访问的源与输出（特殊机制语料；with_counts=False 不另取块数），
+    # 目标文件在判定中恰好只访问一次，模拟才不受跨任务多次访问的干扰
+    vanishing = {root / "data" / "special_cards.json",
+                 root / "data" / "rag_corpus" / "特殊机制语料.json"}
+    seen: set[Path] = set()
+    real_stat = Path.stat
+
+    def _vanishing_stat(self: Path, *args, **kwargs):
+        if self in vanishing:
+            if self in seen:
+                raise FileNotFoundError(2, "模拟：判定途中被删", str(self))
+            seen.add(self)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", _vanishing_stat)
+
+    after = {row["name"]: row["status"] for row in task_states(root, with_counts=False)}
+
+    assert after == before  # 不抛异常，且判定与文件未消失时一致
+
+
 def test_task_defs_include_card_corpus_link(tmp_path: Path) -> None:
     """#1 回归：任务表为单一事实源，装备属性语料必须声明对卡牌语料的依赖。"""
     from src.business.rag.task_defs import TASKS

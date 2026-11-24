@@ -61,14 +61,19 @@ def task_states(root: Path, with_counts: bool = True) -> list[dict]:
         missing_sources = []
         for rel in sources:
             path = root / rel
-            if path.exists():
+            # stat 一步取修改时间，不用 exists 预判：两步之间文件被删会抛未捕获异常，
+            # 冒泡到 Qt 槽中断整次刷新/胶囊菜单构建（本函数有多个 UI 入口）
+            try:
                 source_mtime = max(source_mtime, path.stat().st_mtime)
-            else:
+            except FileNotFoundError:
                 missing_sources.append(rel)
         output_mtimes = []
         for rel in outputs:
             path = root / CORPUS_DIR / rel
-            output_mtimes.append(path.stat().st_mtime if path.exists() else 0.0)
+            try:
+                output_mtimes.append(path.stat().st_mtime)
+            except FileNotFoundError:
+                output_mtimes.append(0.0)
         if missing_sources:
             status = "缺源"
         elif not output_mtimes or any(t == 0.0 for t in output_mtimes):

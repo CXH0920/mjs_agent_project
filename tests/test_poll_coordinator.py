@@ -375,6 +375,10 @@ def _wait_poll_settled(coordinator, capture_service, submitted_at_least: int) ->
             finally:
                 coordinator._poll_thread_lock.release()
         time.sleep(0.01)
+    raise AssertionError(
+        f"poll 线程未在时限内结算: 期望提交数 >={submitted_at_least}，"
+        f"实际 {capture_service.submitted}，工作线程"
+        f"{'仍在运行' if coordinator._poll_thread_lock.locked() else '已结束'}")
 
 
 def _skip_log_count(caplog) -> int:
@@ -387,6 +391,8 @@ def _wait_skip_logged(caplog, count: int) -> None:
         if _skip_log_count(caplog) >= count:
             return
         time.sleep(0.01)
+    raise AssertionError(
+        f"跳过日志未在时限内出现: 期望 >={count} 条，实际 {_skip_log_count(caplog)} 条")
 
 
 def test_static_frame_skips_ocr_after_all_rejected_poll(caplog) -> None:
@@ -504,6 +510,9 @@ def _wait_poll_state(coordinator, task_names, all_rejected: bool) -> None:
                 and coordinator._last_poll_all_rejected is all_rejected):
             return
         time.sleep(0.01)
+    raise AssertionError(
+        f"poll 跳过状态未在时限内写入: 期望 {(task_names, all_rejected)}，"
+        f"实际 {(coordinator._last_poll_task_names, coordinator._last_poll_all_rejected)}")
 
 
 def test_route_probe_rejection_clears_cooldown() -> None:
