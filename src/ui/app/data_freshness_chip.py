@@ -226,8 +226,7 @@ class DataFreshnessChip(QLabel):
     def _visible_item_keys(self) -> tuple[str, ...]:
         """可见开关：武将/榜单恒见；攻略/相性/语料仅完整版，语料还需维护页。
 
-        守卫（至少保留一项）按此可见项计数，corpus 计入——禁到只剩 corpus 时
-        判定层 fail-safe 回全量监测兜底。
+        守卫（至少保留一项）只数其中参与判定的项，见 _toggle_item。
         """
         visible = {"heroes", "rankings"}
         if is_full_build():
@@ -239,18 +238,32 @@ class DataFreshnessChip(QLabel):
     def _toggle_item(self, key: str) -> None:
         """切换监测项：守卫 → 单键集合增删 → 原子写回 → 成功刷新胶囊。
 
-        写失败（OSError）env 未变，改动不保留、只 toast；菜单已随点击关闭，
-        重开时现读 env 自然显示真实勾选态，无需回滚。
+        写失败（OSError，或 config.env 非 UTF-8 时的 UnicodeDecodeError）env 未变，
+        改动不保留、只 toast；菜单已随点击关闭，重开时现读 env 自然显示真实勾选态，
+        无需回滚。
         """
         disabled = load_disabled_items()
         visible = self._visible_item_keys()
-        if key not in disabled and len(set(visible) - disabled) == 1:
+        # 守卫只数参与判定的项：corpus 仅静音提示，不计入「至少一项」也不受其限制——
+        # 计入它会让四个可判项经菜单依次全关（判定层随即回全量，菜单显示与实际监测不一致）
+        judgeable = set(visible) - {"corpus"}
+        if key in judgeable and key not in disabled and len(judgeable - disabled) == 1:
             show_toast(self.window(), "至少保留一项监测", TONE_WARNING)
             return
         new = (disabled - {key}) if key in disabled else (disabled | {key})
         try:
             save_env_file(DEFAULT_ENV_FILE, {
                 "DATA_FRESHNESS_DISABLED_ITEMS": ",".join(sorted(new))})
+        except UnicodeDecodeError:
+            # 记事本「ANSI」保存的 config.env 读不出旧内容，写侧为保留注释拒绝覆盖
+            logger.warning(
+                "监测项配置写回失败，config.env 非 UTF-8 编码，改动不保留: %s", key,
+                exc_info=True)
+            show_toast(
+                self.window(),
+                "保存失败：config.env 需为 UTF-8 编码，请另存为 UTF-8 后重试",
+                TONE_WARNING)
+            return
         except OSError:
             logger.warning("监测项配置写回失败，改动不保留: %s", key)
             show_toast(self.window(), "保存失败，改动将不保留", TONE_WARNING)

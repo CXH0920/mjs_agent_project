@@ -18,11 +18,19 @@ logger = logging.getLogger(__name__)
 class HeroFetchService(BaseFetchService):
     """武将采集业务服务
 
-    封装全量/增量/指定获取三种采集模式的进程管理。
+    封装全量/增量/指定获取三种采集模式的进程管理。成败由子进程退出码判定；
+    指定采集另解析子进程的落盘回报行，供调用方只按实际写入的武将收尾。
     """
 
     fetch_completed = Signal(bool)  # True=成功, False=失败
     progress_updated = Signal(int, int, str)  # (当前步, 总步数, 阶段文字)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # 本轮子进程回报的实际写入武将 id；None = 未回报（无从判定哪些武将落盘）
+        self.written_hero_ids: set[int] | None = None
+        # 本轮指定采集请求的武将 id
+        self.requested_hero_ids: set[int] = set()
 
     @property
     def _service_name(self) -> str:
@@ -73,17 +81,36 @@ class HeroFetchService(BaseFetchService):
         ids_str = ",".join(str(hid) for hid in hero_ids)
         self.status_changed.emit("正在采集指定武将...")
         self._start_process(["-m", "src.scraper.incremental", "--hero-id", ids_str])
+        # 须在 _start_process 之后：它清空上一轮的请求集
+        self.requested_hero_ids = set(hero_ids)
         return True
 
     # ---------------------------------------------------------------
     # 钩子
     # ---------------------------------------------------------------
 
+    def _start_process(self, args: list[str]) -> None:
+        # 每轮启动清空上一轮的回报与请求集：残留会让无关采集的完成事件算出假的「未更新」
+        self.written_hero_ids = None
+        self.requested_hero_ids = set()
+        super()._start_process(args)
+
     _PROGRESS_LINE_RE = re.compile(r"^\[(\d+)/(\d+)\]\s*(.*)$")
+    # 落盘回报行：子进程保存 heroes.json 后输出「[写入武将] 1,3」（见
+    # src.scraper.official_source.incremental.run）。固定前缀、行首锚定——子进程
+    # 的日志与 print 共用 stdout，不能依赖它是最后一行
+    _WRITTEN_LINE_RE = re.compile(r"^\[写入武将\]\s*([\d,\s]*)$")
 
     def _on_stdout_line(self, line: str) -> None:
-        """解析子进程 [n/N] 步骤进度（全量 [1/5]、增量/指定 [1/3]）。"""
-        match = self._PROGRESS_LINE_RE.match(line.strip())
+        """解析子进程 [n/N] 步骤进度（全量 [1/5]、增量/指定 [1/3]）与落盘回报行。"""
+        text = line.strip()
+        written = self._WRITTEN_LINE_RE.match(text)
+        if written:
+            self.written_hero_ids = {
+                int(token) for token in written.group(1).split(",") if token.strip()
+            }
+            return
+        match = self._PROGRESS_LINE_RE.match(text)
         if not match:
             return
         self.progress_updated.emit(
@@ -91,6 +118,12 @@ class HeroFetchService(BaseFetchService):
             int(match.group(2)),
             match.group(3).strip(),
         )
+
+    @property
+    def unwritten_hero_ids(self) -> set[int]:
+        """指定采集请求了但未落盘的武将 id；子进程未回报时无从判定，视为无。"""
+        written = self.written_hero_ids
+        return self.requested_hero_ids - written if written is not None else set()
 
     def _on_process_finished(self, exit_code: int) -> None:
         self.fetch_completed.emit(exit_code == 0)

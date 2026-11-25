@@ -1295,7 +1295,7 @@ def test_on_announcement_check_finished_hero_related_toast(monkeypatch) -> None:
 def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> None:
     """令牌未置位时，无关采集的完成事件不得消费公告更新阶段（H5 回归）。
 
-    成功收尾按 _pending_consume 武将粒度消费：mark_applied 收到勾选名单，
+    成功收尾按子进程回报的实际落盘武将消费：mark_applied 收到落盘的勾选武将，
     diff 只清已消费条目、剩余武将保留。
     """
     from src.ui.app import announcement_update_coordinator as coordinator_module
@@ -1314,6 +1314,7 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
         _pending_phases=[("specific", [161])],
         _pending_consume=[{"name": "贾诩", "hero_id": 161}],
         _phase_gate=BusyGate(),
+        _fetch_service=SimpleNamespace(written_hero_ids={161}, unwritten_hero_ids=set()),
         _service=SimpleNamespace(mark_applied=lambda *args: applied.append(args)),
         _last_diff={
             "added": [{"name": "贾诩", "id": 161}, {"name": "马钧", "id": 184}],
@@ -1333,6 +1334,7 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
     window._phase_gate.acquire()
     # 非绑定调用下把真实 diff 过滤接回假对象，断言才覆盖真实现
     window._filter_consumed_diff = AnnouncementUpdateCoordinator._filter_consumed_diff
+    window._split_written = AnnouncementUpdateCoordinator._split_written
     AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
 
     assert window._pending_phases is None
@@ -1342,6 +1344,99 @@ def test_update_phase_token_ignores_foreign_fetch_completion(monkeypatch) -> Non
         "modified": [],
         "removed": [],
     }
+
+
+def _phase_window(monkeypatch, written: set[int] | None, consume: list[dict], diff: dict):
+    """阶段令牌在位的假协调器：记录 mark_applied 实参、toast 与状态栏消息。
+
+    written 为子进程回报的落盘武将 id（None = 未回报）；语料尾串替换为固定标记。
+    """
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    applied: list = []
+    toasts: list[str] = []
+    messages: list[str] = []
+    monkeypatch.setattr(
+        coordinator_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
+    )
+    monkeypatch.setattr(coordinator_module, "_corpus_stale_suffix", lambda: "\n【语料尾串】")
+    window = SimpleNamespace(
+        _window=None,
+        _reporter=SimpleNamespace(show_message=messages.append, hide_progress=lambda: None),
+        _pending_phases=[("specific", sorted(c["hero_id"] for c in consume))],
+        _pending_consume=consume,
+        _phase_gate=BusyGate(),
+        _fetch_service=SimpleNamespace(written_hero_ids=written),
+        _service=SimpleNamespace(mark_applied=lambda *args: applied.append(args)),
+        _last_diff=diff,
+        _refresh_banner=lambda: None,
+        _refresh_dialog=lambda: None,
+        # 非绑定调用下把真实的落盘切分与 diff 过滤接回假对象，断言才覆盖真实现
+        _split_written=AnnouncementUpdateCoordinator._split_written,
+        _filter_consumed_diff=AnnouncementUpdateCoordinator._filter_consumed_diff,
+    )
+    window._phase_gate.acquire()
+    return window, applied, toasts, messages
+
+
+def test_update_phase_consumes_only_written_heroes(monkeypatch) -> None:
+    """按实际落盘消费：子进程回报未写入的武将不 mark_applied、diff 保留、toast 点名。
+
+    回归：此前按勾选集消费——指定采集对校验未通过/官网未找到的武将只跳过不报错，
+    这些武将的公告与差异被静默吞掉。
+    """
+    consume = [
+        {"name": "贾诩", "hero_id": 1}, {"name": "萧思话", "hero_id": 2},
+        {"name": "东方朔", "hero_id": 188},
+    ]
+    diff = {
+        "added": [{"name": "萧思话", "id": 2}, {"name": "东方朔", "id": 188}],
+        "modified": [],
+        "removed": [],
+    }
+    window, applied, toasts, messages = _phase_window(monkeypatch, {1, 188}, consume, diff)
+
+    AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
+
+    assert applied == [({"贾诩", "东方朔"}, {1, 188})]
+    assert window._last_diff == {"added": [{"name": "萧思话", "id": 2}], "modified": [], "removed": []}
+    assert messages == ["萧思话 未能更新；它们和未勾选的武将下次检查仍会提示。"]
+    # 阶段路径的 toast 同样带语料尾串
+    assert toasts[-1].endswith("萧思话 未能更新；它们和未勾选的武将下次检查仍会提示。\n【语料尾串】")
+
+
+def test_update_phase_without_written_report_consumes_nothing(monkeypatch) -> None:
+    """子进程未回报落盘情况：一个也无法确认，全部不消费并明示（宁可多提示不丢提示）。"""
+    consume = [{"name": "贾诩", "hero_id": 1}, {"name": "萧思话", "hero_id": 2}]
+    diff = {"added": [{"name": "萧思话", "id": 2}], "modified": [{"name": "贾诩", "id": 1}], "removed": []}
+    window, applied, toasts, _messages = _phase_window(monkeypatch, None, consume, diff)
+
+    AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
+
+    assert applied == []
+    assert window._last_diff is diff
+    assert any("无法确认哪些武将已更新" in message for message in toasts)
+
+
+def test_manual_specific_fetch_toast_names_unwritten_heroes(monkeypatch) -> None:
+    """手动指定获取：子进程未写入的所选武将按编号点名（此路径主程序只有编号）。"""
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    toasts = []
+    monkeypatch.setattr(
+        coordinator_module, "show_toast", lambda parent, msg, **kwargs: toasts.append(msg)
+    )
+    monkeypatch.setattr(coordinator_module, "_corpus_stale_suffix", lambda: "")
+    window = SimpleNamespace(
+        _window=None,
+        _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
+        _pending_phases=None,
+        _fetch_service=SimpleNamespace(unwritten_hero_ids={5, 2}),
+    )
+
+    AnnouncementUpdateCoordinator._on_fetch_completed(window, True)
+
+    assert toasts == ["武将数据已采集完成，请重新加载数据。其中 2 个所选武将未能更新（ID 2、5），详见日志。"]
 
 
 def test_filter_consumed_diff_falls_back_to_name_and_keeps_removed() -> None:
@@ -1728,14 +1823,24 @@ def test_main_window_announcement_integration(tmp_path, monkeypatch, qapp) -> No
 
         class _FakeFetchService:
             is_busy = False
+            # 对齐生产契约：指定采集完成后可查本轮「请求 / 实际写入」的武将 id
+            written_hero_ids = None
+            requested_hero_ids: set[int] = set()
 
             def fetch_specific(self, hero_ids):
                 calls.append(("specific", hero_ids))
+                self.requested_hero_ids = set(hero_ids)
+                self.written_hero_ids = set(hero_ids)  # 假定子进程全部写入
                 return True
 
             def fetch_incremental(self):
                 calls.append(("incremental", None))
                 return True
+
+            @property
+            def unwritten_hero_ids(self) -> set[int]:
+                written = self.written_hero_ids
+                return self.requested_hero_ids - written if written is not None else set()
 
         window._announcement_coordinator._fetch_service = _FakeFetchService()
 
@@ -2447,6 +2552,7 @@ def test_fetch_completed_toast_appends_corpus_stale_suffix(monkeypatch) -> None:
         _window=None,
         _reporter=SimpleNamespace(show_message=lambda s: None, hide_progress=lambda: None),
         _pending_phases=None,
+        _fetch_service=SimpleNamespace(unwritten_hero_ids=set()),
     )
 
     AnnouncementUpdateCoordinator._on_fetch_completed(window, True)

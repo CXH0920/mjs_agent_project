@@ -163,7 +163,8 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     """对原始数据执行清洗→校验→输出
 
     append=True : 追加模式，只添加本地不存在的武将（增量采集用）
-    replace_ids : 替换模式，先删除这些 ID 的旧数据，再加入新数据（指定武将采集用）
+    replace_ids : 替换模式，其中新数据校验通过的武将先删旧数据再写入（指定武将采集用），
+                  校验未通过者保留本地旧记录
     两者皆否    : 全量覆盖写入
     """
     print("\n[清洗与字段映射...]", flush=True)
@@ -207,7 +208,10 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
             sys.exit(1)
         validated = carry_over_local_fields(validated, existing)
         before = len(existing)
-        existing = [h for h in existing if h["id"] not in replace_ids]
+        # 只替换新数据校验通过的武将：replace_ids 取自官网找得到的原始数据（早于校验），
+        # 按它删旧会让解析/校验失败的武将连本地旧记录一起被删——它们只是没更新，不是下架
+        replaced_ids = replace_ids & {h["id"] for h in validated}
+        existing = [h for h in existing if h["id"] not in replaced_ids]
         removed = before - len(existing)
         merged = existing + validated
         print(f"  -> 替换写入: 删除 {removed} 条旧数据 + 写入 {len(validated)} 条新数据", flush=True)
@@ -226,6 +230,9 @@ def run(raw_list: list[dict], output_path: Path, dry_run: bool,
     snapshot_to_backups(output_path)
     save_json_atomic(output_path, merged)
     print(f"  -> 已保存: {output_path} ({len(merged)} 条)", flush=True)
+    # 落盘回报行，父进程（HeroFetchService）据此只消费实际写入的武将。须紧随保存：
+    # 其后的头像下载可能异常退出，届时已写入的数据不应被当作未更新
+    print(f"[写入武将] {','.join(str(h['id']) for h in validated)}", flush=True)
 
     if not dry_run and not skip_images and raw_list:
         from src.scraper.official_source.crawler import download_hero_images

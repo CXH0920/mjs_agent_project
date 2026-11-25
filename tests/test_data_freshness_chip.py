@@ -7,6 +7,7 @@ monkeypatch 替身隔离真实数据盘；QMenu 只测 _build_menu 结构（exec
 
 from __future__ import annotations
 
+import logging
 import types
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
@@ -405,6 +406,45 @@ def test_toggle_last_enabled_item_blocked_in_lite(qapp, monkeypatch, tmp_path) -
     assert toasts == ["至少保留一项监测"]
 
 
+def test_toggle_cannot_disable_last_judgeable_item_while_corpus_enabled(
+    qapp, monkeypatch, tmp_path,
+) -> None:
+    """守卫只数可判项：语料欠账提醒开着时，第四个真监测项同样勾不掉。
+
+    回归：corpus 曾计入「至少一项」计数，四个真监测项可经菜单依次全部关闭，
+    随后判定层 fail-safe 回全量，菜单显示（四项未勾选）与实际监测不一致。
+    """
+    chip, _window = _full_build_chip(monkeypatch, tmp_path, [])
+    saved = _patch_items(monkeypatch, frozenset())
+    toasts = _capture_toasts(monkeypatch)
+
+    for key in ("heroes", "guides", "synergies"):
+        chip._toggle_item(key)
+
+    assert toasts == []  # 前三项放行
+    chip._toggle_item("rankings")
+    assert toasts == ["至少保留一项监测"]
+    assert saved[-1] == {"DATA_FRESHNESS_DISABLED_ITEMS": "guides,heroes,synergies"}
+
+
+def test_corpus_hint_switch_is_not_guarded(qapp, monkeypatch, tmp_path) -> None:
+    """语料欠账提醒不参与守卫：真监测项仅剩一项时可关，自身是唯一启用项时也可关。"""
+    chip, _window = _full_build_chip(monkeypatch, tmp_path, [])
+    toasts = _capture_toasts(monkeypatch)
+
+    # 真监测项仅剩武将启用：关语料提醒不受「至少保留一项」拦截
+    saved = _patch_items(monkeypatch, frozenset({"guides", "synergies", "rankings"}))
+    chip._toggle_item("corpus")
+    assert toasts == []
+    assert saved == [{"DATA_FRESHNESS_DISABLED_ITEMS": "corpus,guides,rankings,synergies"}]
+
+    # 老版本守卫写出的遗留状态（四个真监测项已全关）：同样允许关闭
+    saved = _patch_items(monkeypatch, frozenset({"heroes", "guides", "synergies", "rankings"}))
+    chip._toggle_item("corpus")
+    assert toasts == []
+    assert saved == [{"DATA_FRESHNESS_DISABLED_ITEMS": "corpus,guides,heroes,rankings,synergies"}]
+
+
 def test_toggle_save_failure_toasts_and_keeps_chip(qapp, monkeypatch, tmp_path) -> None:
     """写失败：OSError → toast、env 未变、胶囊不变（未 _refresh）、无异常外泄。"""
     counts = {"n": 0}
@@ -421,6 +461,34 @@ def test_toggle_save_failure_toasts_and_keeps_chip(qapp, monkeypatch, tmp_path) 
     assert toasts == ["保存失败，改动将不保留"]
     assert counts["n"] == 1          # _refresh 未被调，仍只有初次渲染
     assert chip.text() == "数据：2天前"
+
+
+def test_toggle_save_failure_on_non_utf8_env_guides_recoding(
+    qapp, monkeypatch, tmp_path, caplog,
+) -> None:
+    """config.env 为 ANSI（GBK）编码：写侧读旧内容抛 UnicodeDecodeError，不得逃出 Qt 槽。
+
+    回归：此前只捕 OSError，异常逃逸（仅全局 excepthook 记 ERROR），用户点开关
+    没有任何提示。走真实 save_env_file：toast 指引另存为 UTF-8、原文件未被改动。
+    """
+    counts = {"n": 0}
+    chip, _ = _make_chip(monkeypatch, tmp_path, _report(), counts)
+    env_file = tmp_path / "config.env"
+    original = "# 本地手写注释\nLOG_LEVEL=INFO\n".encode("gbk")
+    env_file.write_bytes(original)
+    monkeypatch.setattr(data_freshness_chip, "DEFAULT_ENV_FILE", env_file)
+    monkeypatch.setattr(
+        data_freshness_chip, "load_disabled_items", lambda: frozenset())
+    toasts = _capture_toasts(monkeypatch)
+
+    with caplog.at_level(logging.WARNING, logger="src.ui.app.data_freshness_chip"):
+        chip._toggle_item("guides")  # 不替换 save_env_file：走真实写回
+
+    assert len(toasts) == 1
+    assert "UTF-8" in toasts[0]
+    assert env_file.read_bytes() == original  # 读不出旧内容即中止保存，未覆盖
+    assert counts["n"] == 1                    # 未 _refresh
+    assert any("config.env" in record.getMessage() for record in caplog.records)
 
 
 def test_lite_build_shows_only_two_switches(qapp, monkeypatch, tmp_path) -> None:

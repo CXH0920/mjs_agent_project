@@ -213,8 +213,8 @@ class AnnouncementUpdateCoordinator(QObject):
 
         只有阶段令牌在位的完成事件才消费更新队列：无关采集（如手动采集）
         的完成不得冒领阶段结果，否则公告武将会被静默跳过并 mark_applied。
-        成功后按本批勾选候选武将粒度消费——公告只记已更新武将、diff 只清
-        已更新条目、基线只前移已更新武将，用户跳过的武将下次检查仍会提示。
+        成功后按子进程回报的实际落盘武将粒度消费——公告只记已更新武将、diff
+        只清已更新条目、基线只前移已更新武将，未写入与未勾选的武将下次仍会提示。
         """
         self._reporter.hide_progress()
         if self._pending_phases is not None and self._phase_gate.is_busy:
@@ -227,31 +227,51 @@ class AnnouncementUpdateCoordinator(QObject):
             consume = self._pending_consume
             self._pending_consume = None
             if success:
-                names = {candidate["name"] for candidate in consume or []}
-                hero_ids = {
-                    candidate["hero_id"]
-                    for candidate in consume or []
-                    if candidate.get("hero_id") is not None
-                }
-                self._service.mark_applied(names, hero_ids)
-                self._last_diff = self._filter_consumed_diff(self._last_diff, names, hero_ids)
-                self._refresh_banner()
-                self._refresh_dialog()
+                landed, notice = self._split_written(consume, self._fetch_service.written_hero_ids)
+                if landed:
+                    names = {candidate["name"] for candidate in landed}
+                    hero_ids = {candidate["hero_id"] for candidate in landed if candidate.get("hero_id") is not None}
+                    self._service.mark_applied(names, hero_ids)
+                    self._last_diff = self._filter_consumed_diff(self._last_diff, names, hero_ids)
+                    self._refresh_banner()
+                    self._refresh_dialog()
+                if notice:
+                    logger.warning("公告更新：指定采集未全部落盘。%s", notice)
+                    self._reporter.show_message(notice)
                 show_toast(
                     self._window,
                     "武将数据已更新，请重新加载数据（F5）。"
-                    "未勾选的武将下次检查仍会提示。" + _corpus_stale_suffix(),
-                    duration=4000)
+                    + (notice or "未勾选的武将下次检查仍会提示。") + _corpus_stale_suffix(),
+                    duration=6000 if notice else 4000)
             else:
                 QMessageBox.warning(self._window, "采集失败", "武将数据更新失败")
             return
         if success:
+            unwritten = self._fetch_service.unwritten_hero_ids
+            notice = (
+                f"其中 {len(unwritten)} 个所选武将未能更新"
+                f"（ID {'、'.join(map(str, sorted(unwritten)))}），详见日志。" if unwritten else "")
             show_toast(
                 self._window,
-                "武将数据已采集完成，请重新加载数据。" + _corpus_stale_suffix(),
-                duration=3000)
+                "武将数据已采集完成，请重新加载数据。" + notice + _corpus_stale_suffix(),
+                duration=6000 if unwritten else 3000)
         else:
             QMessageBox.warning(self._window, "采集失败", "武将数据采集失败")
+
+    @staticmethod
+    def _split_written(candidates: list[dict] | None, written: set[int] | None) -> tuple[list[dict], str]:
+        """按子进程回报的落盘 id 分出已更新候选，并给出未更新说明（无则空串）。
+
+        消费以实际落盘为准：指定采集对校验未通过/官网未找到的武将只跳过不报错，
+        按勾选集消费会吞掉这些武将的提示。未回报时一个也无法确认，全部不消费。
+        """
+        if not candidates:
+            return [], ""
+        if written is None:
+            return [], "无法确认哪些武将已更新，本次未标记为已处理，下次检查仍会提示。"
+        landed = [candidate for candidate in candidates if candidate.get("hero_id") in written]
+        missed = [candidate["name"] for candidate in candidates if candidate.get("hero_id") not in written]
+        return landed, f"{'、'.join(missed)} 未能更新；它们和未勾选的武将下次检查仍会提示。" if missed else ""
 
     @staticmethod
     def _filter_consumed_diff(

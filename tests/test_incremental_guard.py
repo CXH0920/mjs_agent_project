@@ -24,8 +24,8 @@ def test_run_exits_when_transform_all_none(monkeypatch, tmp_path: Path) -> None:
     assert not output_path.exists()
 
 
-def test_run_exits_when_validate_all_failed(monkeypatch, tmp_path: Path) -> None:
-    """清洗成功但校验全灭 → 退出码 1，不写入"""
+def test_run_exits_when_validate_all_failed(monkeypatch, tmp_path: Path, capsys) -> None:
+    """清洗成功但校验全灭 → 退出码 1，不写入，也不输出落盘回报（父进程按失败处理）"""
     output_path = tmp_path / "heroes.json"
     monkeypatch.setattr(incremental, "transform", lambda raw: _hero_dict(raw["id"]))
     monkeypatch.setattr(incremental, "validate_heroes", lambda heroes: [])
@@ -34,6 +34,7 @@ def test_run_exits_when_validate_all_failed(monkeypatch, tmp_path: Path) -> None
         incremental.run([{"id": 1}], output_path, dry_run=False)
     assert excinfo.value.code == 1
     assert not output_path.exists()
+    assert "[写入武将]" not in capsys.readouterr().out
 
 
 def test_run_replace_aborts_when_local_file_corrupt(monkeypatch, tmp_path: Path) -> None:
@@ -82,6 +83,57 @@ def test_run_replace_still_merges_for_valid_file(monkeypatch, tmp_path: Path) ->
 
     merged = json.loads(output_path.read_text(encoding="utf-8"))
     assert [h["id"] for h in merged] == [2, 1]
+
+
+def _existing_heroes(*hero_ids: int) -> list[dict]:
+    """本地现有武将；old 记号用于断言替换模式没把它们删掉。"""
+    return [{**_hero_dict(hero_id), "old": True} for hero_id in hero_ids]
+
+
+def test_run_reports_written_heroes_and_keeps_invalid_ones_old_record(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """指定采集部分武将校验失败：落盘回报只含通过者，失败者保留本地旧记录。
+
+    回归背景：replace_ids 取自官网找得到的原始数据（早于校验），按它删旧会让
+    校验失败的武将连本地旧记录一起被删；父进程又按勾选集 mark_applied，把它的
+    更新提示一并吞掉。
+    """
+    output_path = tmp_path / "heroes.json"
+    output_path.write_text(json.dumps(_existing_heroes(1, 2, 3)), encoding="utf-8")
+    monkeypatch.setattr(incremental, "transform", lambda raw: _hero_dict(raw["id"]))
+    monkeypatch.setattr(
+        incremental, "validate_heroes", lambda heroes: [h for h in heroes if h["id"] != 2])
+
+    incremental.run(
+        [{"id": 1}, {"id": 2}, {"id": 3}], output_path, dry_run=False,
+        replace_ids={1, 2, 3}, skip_images=True)
+
+    merged = json.loads(output_path.read_text(encoding="utf-8"))
+    # 武将 2 的新数据未通过校验：本地旧记录原样保留（未被删除，也未被替换）
+    assert [h["id"] for h in merged] == [2, 1, 3]
+    assert [h["id"] for h in merged if h.get("old")] == [2]
+    # 落盘回报行：父进程据此只消费实际写入的武将
+    assert "[写入武将] 1,3" in capsys.readouterr().out
+
+
+def test_run_written_line_excludes_heroes_not_found_on_site(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """官网找不到的武将不写入也不动本地旧记录；落盘回报只含实际写入者。"""
+    output_path = tmp_path / "heroes.json"
+    output_path.write_text(json.dumps(_existing_heroes(1, 2)), encoding="utf-8")
+    monkeypatch.setattr(incremental, "transform", lambda raw: _hero_dict(raw["id"]))
+    monkeypatch.setattr(incremental, "validate_heroes", lambda heroes: heroes)
+
+    # 请求了 {1, 2} 而官网只找得到 1：main() 只把找得到的放进 replace_ids，
+    # 找不到的武将不写入、本地旧记录不受影响，回报行自然也不含它
+    incremental.run([{"id": 1}], output_path, dry_run=False, replace_ids={1}, skip_images=True)
+
+    merged = json.loads(output_path.read_text(encoding="utf-8"))
+    assert [h["id"] for h in merged] == [2, 1]
+    assert merged[0].get("old") is True
+    assert "[写入武将] 1" in capsys.readouterr().out
 
 
 def test_load_existing_ids_missing_file_returns_empty_set(tmp_path: Path) -> None:
