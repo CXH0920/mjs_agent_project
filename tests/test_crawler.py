@@ -658,6 +658,78 @@ class TestSplitSkillDesc:
         assert parts["description"] == "正文内容。"
         assert parts["settlement"] == "结算内容。"
 
+    def test_repeated_title_without_body_keeps_earlier_section(self) -> None:
+        """守卫：同名标题再次出现但下面无正文，不得清空先前已收的正文（与重写前一致）。
+
+        回归背景：重写版再次遇到同名标题即把该段置空——先前的正文被清掉，
+        「一段都没收全」触发整段兜底，标题词混进描述。
+        """
+        raw = (
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p>变体正文。</p>\n\n"
+            "<p><strong>技能描述</strong></p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "变体正文。"
+        assert parts["settlement"] == ""
+
+    def test_repeated_title_without_body_keeps_other_sections(self) -> None:
+        """守卫：同上，且其后另有详情/结算段——不得把详情正文顶成描述、丢掉结算。"""
+        raw = (
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p>变体正文。</p>\n\n"
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p><strong>技能详情</strong></p>\n\n"
+            "<p>详情正文。</p>\n\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>变体结算。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "变体正文。"
+        assert parts["settlement"] == "变体结算。"
+
+    def test_repeated_title_with_body_takes_the_latter(self) -> None:
+        """同名标题再次出现且下面有正文：取后出现的一段（重写前语义），而非把两段拼接。"""
+        raw = (
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p>旧版正文。</p>\n\n"
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p>新版正文。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "新版正文。"
+
+    def test_stray_text_before_title_paragraph(self) -> None:
+        """守卫：标题的 <p> 前夹着游离文字时仍认得出标题，标题词不粘进正文（与重写前一致）。"""
+        raw = (
+            "前言<p><strong>技能描述</strong></p>\n\n"
+            "<p>变体正文。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "变体正文。"
+
+    def test_uppercase_closing_tag_on_title_paragraph(self) -> None:
+        """守卫：标题段以大写 </P> 闭合（切行只认小写）时仍认得出标题（与重写前一致）。"""
+        raw = (
+            "<p><strong>技能描述</strong></P><p>变体正文。</p>"
+            "<p><strong>结算详情</strong></P><p>变体结算。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "变体正文。"
+        assert parts["settlement"] == "变体结算。"
+
+    def test_unclosed_body_paragraph_before_next_title(self) -> None:
+        """标题的 <p> 前是上一段漏写 </p> 的正文：正文归上一段，后一个标题照常识别。"""
+        raw = (
+            "<p><strong>技能描述</strong></p>\n\n"
+            "<p>变体正文。\n"
+            "<p><strong>结算详情</strong></p>\n\n"
+            "<p>变体结算。</p>"
+        )
+        parts = crawler.split_skill_desc(raw)
+        assert parts["description"] == "变体正文。"
+        assert parts["settlement"] == "变体结算。"
+
     def test_mid_content_br_joining_unchanged(self) -> None:
         """守卫（零差异承诺）：正文段内 <br /> 断行不加空格，存量 heroes.json 文本须逐字节不变
 

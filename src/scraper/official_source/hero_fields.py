@@ -29,8 +29,10 @@ SKILL_SECTION_TITLES = ["技能描述", "结算详情", "结算详解", "技能�
 # 「像标签」序列：< 后必须是字母、/字母、!-- 或 !；`<5`、`->` 不匹配故保留为正文。
 _TAG_LIKE_RE = re.compile(r"<(?:/?[a-zA-Z][^>]*|!--.*?--|![^>]*)>", re.DOTALL)
 
-# <br> 换行视同段边界：官网有「标题与正文同 <p>、中间 <br /> 换行」的录入形态；大小写不敏感兜 <BR>
-_BR_SPLIT_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# 段边界切片：<br> 换行与 <p> 开标签。官网有「标题与正文同 <p>、中间 <br /> 换行」的录入
+# 形态；标题的 <p> 前夹着游离文字（上一段漏写 </p>、闭合标签大写致切行失效等）时，
+# 不按 <p> 切开则标题词会粘进正文片而认不出标题。大小写不敏感兜 <BR>/<P>，<p> 可带属性
+_BLOCK_SPLIT_RE = re.compile(r"<p(?:\s[^>]*)?>|<br\s*/?>", re.IGNORECASE)
 
 
 def _unescape_and_strip_tags(text: str, rounds: int = 3) -> str:
@@ -88,14 +90,16 @@ def carry_over_local_fields(new_heroes: list[dict], existing: list[dict] | None)
 
 def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     """
-    先按 </p> 切行、行内 <br> 切片，标题以纯文本等值匹配词表——判定不依赖标签形式，
-    官网人工编辑的排版变体（<b> 包裹/漏包加粗/标题与正文同 <p> 以 <br /> 换行）不再
-    导致描述丢失；行内无标题片时整行清洗，输出与历史行为逐字节一致（hero_content_hash
-    纳入 description/settlement，文本差异会误报「武将资料更新」公告并使忽略名单失配）。
+    先按 </p> 切行、行内 <p>/<br> 切片，标题以纯文本等值匹配词表——判定不依赖标签形式，
+    官网人工编辑的排版变体（<b> 包裹/漏包加粗/标题与正文同 <p> 以 <br /> 换行/标题的 <p>
+    前夹有游离文字）不再导致描述丢失；行内无标题片时整行清洗，输出与历史行为逐字节一致
+    （hero_content_hash 纳入 description/settlement，文本差异会误报「武将资料更新」公告并使
+    忽略名单失配）。
     描述取值按 技能描述 -> 技能详情 -> 技能详解 顺序认领首个命中
     （官网人工编辑，标题措辞不统一）；结算详情/结算详解 -> settlement
     丢弃：技能典故、设计思路
     首个标题前的正文攒入 prelude，描述认领全落空时兜底（漏写首标题不再静默丢正文）。
+    同名标题再次出现时沿用历史语义：本次出现攒到正文才覆盖先前的，无正文不清空。
     """
     if not raw_desc:
         return {"description": "", "settlement": ""}
@@ -107,32 +111,30 @@ def split_skill_desc(raw_desc: str | None) -> dict[str, str]:
     sections: dict[str, str] = {}
     prelude: list[str] = []
     current_title: str | None = None
+    # 当前标题本次出现攒下的正文片：攒到内容才写入 sections——同名标题再次出现时，
+    # 后者有正文才覆盖先前的；无正文（如多敲了一个空标题段）不清空，也不参与认领
+    current_parts: list[str] = []
 
     for line in text.split("</p>"):
-        pieces = [clean_html(piece) for piece in _BR_SPLIT_RE.split(line)]
+        pieces = [clean_html(piece) for piece in _BLOCK_SPLIT_RE.split(line)]
         if not any(piece in SKILL_SECTION_TITLES for piece in pieces):
             # 行内无标题片：整行清洗，与历史行为逐字节一致（正文段内 <br> 处不加空格）
-            part = clean_html(line)
-            if not part:
-                continue
-            if current_title is None:
-                prelude.append(part)
-            else:
-                sections[current_title] = (sections[current_title] + " " + part).strip()
-            continue
+            pieces = [clean_html(line)]
         for piece in pieces:
             if not piece:
                 continue
             if piece in SKILL_SECTION_TITLES:
+                if current_title is not None and current_parts:
+                    sections[current_title] = " ".join(current_parts)
+                    current_parts.clear()
                 current_title = piece
-                sections[current_title] = ""
             elif current_title is None:
                 prelude.append(piece)
             else:
-                sections[current_title] = (sections[current_title] + " " + piece).strip()
+                current_parts.append(piece)
 
-    # 空正文段不参与认领：「技能描述」标题下无正文时，认领链继续落到「技能详情」
-    sections = {key: value for key, value in sections.items() if value}
+    if current_title is not None and current_parts:
+        sections[current_title] = " ".join(current_parts)
 
     # 没有标题的情况：整段作为描述
     if not sections:
