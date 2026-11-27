@@ -2082,6 +2082,83 @@ def test_banner_dismiss_fingerprint(tmp_path, monkeypatch, qapp) -> None:
         qapp.processEvents()
 
 
+def test_banner_ignores_failed_check_for_known_diff(tmp_path, monkeypatch, qapp) -> None:
+    """没取到百科的检查不改变已知差异：已关闭的横幅不会在下次成功检查后自己弹回来。
+
+    回归：公告或百科拉取失败的检查带着空占位 diff 回来，此前被无条件采纳——内存
+    差异被清空且横幅指纹记下 0，下次成功检查的差异仍是同一批却被当成「变多」，
+    用户已关闭的横幅重弹；公告对话框的差异清单也被清空到下次成功检查为止。
+    走真实的 _on_check_finished（此前失败路径没有任何用例覆盖）。
+    """
+    from src.business.announcement.announcement_service import AnnouncementCheckResult
+    from src.data.guide_manager import GuideManager
+    from src.data.synergy_manager import SynergyManager
+    from src.ui.app import announcement_update_coordinator as coordinator_module
+
+    monkeypatch.setattr(
+        coordinator_module, "show_toast", lambda parent, message, **kwargs: None
+    )
+    empty_diff = {"added": [], "modified": [], "removed": []}
+    known_diff = {
+        "added": [{"name": f"武将{i}", "id": i} for i in range(5)],
+        "modified": [],
+        "removed": [],
+    }
+
+    def _check(diff: dict) -> AnnouncementCheckResult:
+        """取到百科的检查；失败形态直接用生产里的两种构造（见下），不经带默认值的辅助。"""
+        return AnnouncementCheckResult(diff=diff, baike_ok=True)
+
+    heroes_file, synergies_file, guides_file = _small_corpus(tmp_path)
+    window = MainWindow(
+        HeroManager(heroes_file=heroes_file),
+        SynergyManager(synergies_file=synergies_file),
+        GuideManager(guides_file=guides_file),
+    )
+    window.show()
+    qapp.processEvents()
+    coordinator = window._announcement_coordinator
+    banner = window._announcement_banner
+    try:
+        # 隔离本机默认 data/announcements.json（AppServices 启动即加载）：只由差异驱动横幅
+        coordinator._manager._items.clear()
+
+        coordinator._on_check_finished(_check(known_diff))
+        assert banner.isVisible()
+
+        # 百科没拉到（_do_check 的 baike_ok=False 分支）：横幅与已知差异都保持原样
+        # （此前横幅先消失，下次成功检查再闪回）
+        coordinator._on_check_finished(AnnouncementCheckResult(baike_ok=False))
+        assert banner.isVisible()
+        assert coordinator._last_diff == known_diff
+
+        coordinator.dismiss_banner()
+        assert not banner.isVisible()
+
+        # 公告没拉到（_do_check 的 error 分支）：同样不改变已知差异
+        coordinator._on_check_finished(AnnouncementCheckResult(error="公告获取失败: 连接超时"))
+        assert not banner.isVisible()
+        assert coordinator._last_diff == known_diff
+
+        # 下次成功检查仍是同一批差异：没有新东西，保持关闭
+        coordinator._on_check_finished(_check(known_diff))
+        assert not banner.isVisible()
+
+        # 真有新变化时照常重弹；真的没有差异时照常采纳（不把旧差异一直攥着）
+        coordinator._on_check_finished(_check({
+            "added": known_diff["added"] + [{"name": "新武将", "id": 99}],
+            "modified": [],
+            "removed": [],
+        }))
+        assert banner.isVisible()
+        coordinator._on_check_finished(_check(empty_diff))
+        assert coordinator._last_diff == empty_diff
+        assert not banner.isVisible()
+    finally:
+        window.close()
+        qapp.processEvents()
+
+
 # ============================================================
 # 字段级差异摘要与更新候选
 # ============================================================

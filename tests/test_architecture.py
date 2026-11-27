@@ -988,6 +988,11 @@ FILE_LINE_BUDGETS: dict[str, int] = {
     # readonly_viewer_dialog.py；706 → 723：审计时效跳转携带结构化命中定位
     # （P1-1，_open_refinement(focus) + 搜索词提取）
     "ui/maintenance/rag_maintenance_panel.py": 652,  # 723 → 733：_refinement_focus_queries 复数版（P1-1 ii 导航站列表，去重保序）；733 → 645：task_states/index_state 判定下沉 src/business/rag/corpus_freshness.py（P0-2 多消费方单一事实源），顶部 re-export 保模块级名字；645 → 652：元规则脚本忙碌联动（互斥锁入口 + 双向拦截，P1-3）
+    # 首次入册（实测 505 越过 500 绊线）：公告检查失败的收尾不再用空占位 diff 覆盖上次
+    # 已知差异——否则横幅指纹记 0，下次成功检查会让用户已关闭的横幅自己弹回来（P2-3）。
+    # 此前 78d98e2（按实际落盘武将消费）已从 480 行增至 499 行；本次增量几乎全是该处
+    # 「为什么」的说明，判定本身只有 _on_check_finished 的一处采纳条件，不值得另拆模块
+    "ui/app/announcement_update_coordinator.py": 505,
     # ui/shared/style.py（1286 行）不入表：纯设计 token 与 QSS 常量字符串，
     # 无行为逻辑，拆分只会制造间接层（tripwire 豁免见 LINE_TRIPWIRE_EXEMPTS）。
 }

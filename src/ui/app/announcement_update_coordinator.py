@@ -298,9 +298,15 @@ class AnnouncementUpdateCoordinator(QObject):
         self._reporter.show_indeterminate("正在检查公告更新...")
 
     def _on_check_finished(self, result: AnnouncementCheckResult) -> None:
-        """处理一次公告检查结果，更新横幅/对话框与提示。"""
+        """处理一次公告检查结果，更新横幅/对话框与提示。
+
+        百科没取到的检查（公告或百科拉取失败）的 diff 是空占位而非「没有差异」：
+        沿用上次已知的差异。按空覆盖会清空内存清单（对话框差异、更新候选随之消失），
+        并让横幅指纹记下 0——下次成功检查的差异「变多」，用户已关闭的横幅会自己弹回来。
+        """
         self._reporter.hide_progress()
-        self._last_diff = result.diff
+        if result.baike_ok:
+            self._last_diff = result.diff
         self._refresh_banner()
         self._refresh_dialog()
         if result.error:
